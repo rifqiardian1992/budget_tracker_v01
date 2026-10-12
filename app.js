@@ -150,14 +150,39 @@ async function api(action,data={}){
 async function checkBackendConnection(){
   const badge=$("connectionStatus");
   if(!API_URL){badge.textContent="Mode lokal · backend belum diatur";badge.className="status status-demo";return;}
-  badge.textContent="Memeriksa koneksi…";badge.className="status status-demo";
+  badge.textContent="Memeriksa koneksi dan memuat data…";badge.className="status status-demo";
   try {
-    const result=await api("health");
-    if(!result || result.success!==true) throw new Error(result?.message||"Health check gagal");
-    badge.textContent="Backend terhubung";badge.className="status status-connected";
+    const health=await api("health");
+    if(!health || health.success!==true) throw new Error(health?.message||"Health check gagal");
+
+    // Google Sheets is the source of truth for saved budgets and transactions.
+    // Load budget for the selected month and transactions for the active payday cycle.
+    const budgetResult=await api("getBudget",{period:period()});
+    if(budgetResult && budgetResult.success && budgetResult.data){
+      const remote=budgetResult.data;
+      if(Array.isArray(remote.items) && remote.items.length){
+        $("mainBudget").value=Number(remote.mainBudget)||mainBudget();
+        items=remote.items.map(x=>({
+          id:nextId++, name:String(x.name||""), mode:x.mode==="percent"?"percent":"amount",
+          baseBudget:Number.isFinite(Number(x.baseBudget))?Number(x.baseBudget):Number(x.amount)||0,
+          additionalBudget:Number.isFinite(Number(x.additionalBudget))?Number(x.additionalBudget):0,
+          amount:Number(x.amount)||0, percent:Number(x.percent)||0, mandatory:Boolean(x.mandatory)
+        }));
+        recalc(); renderItems();
+      }
+    }
+    let txResult;
+    const range=usageRange();
+    if(range) txResult=await api("getHistoricalTransactions",{startDate:range.start,nextDate:range.next});
+    else txResult=await api("getTransactions",{period:period()});
+    if(txResult && txResult.success && Array.isArray(txResult.data)){
+      transactions=txResult.data.map((t,i)=>({id:String(t.id||`remote-${i}-${t.date||""}`),date:String(t.date||""),itemName:String(t.itemName||""),description:String(t.description||""),amount:Number(t.amount)||0,type:t.type==="income"?"income":"expense"}));
+    } else if(txResult && txResult.success===false) throw new Error(txResult.message||"Gagal memuat transaksi dari Google Sheets");
+    localSave(); renderActual();
+    badge.textContent="Backend terhubung · data Google Sheets dimuat";badge.className="status status-connected";
   } catch(err) {
-    badge.textContent="Backend tidak terjangkau";badge.className="status status-error";
-    console.error("Budget Tracker backend health check:",err);
+    badge.textContent="Backend terhubung bermasalah saat memuat data";badge.className="status status-error";
+    console.error("Budget Tracker backend load:",err);
   }
 }
 $("budgetRows").addEventListener("input",e=>{
