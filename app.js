@@ -274,7 +274,7 @@ function renderAiAdvice(text){
   box.textContent=latestAiAdvice;$("sendAdviceBtn").disabled=!latestAiAdvice;
 }
 $("aiAdviceBtn").addEventListener("click",async()=>{
-  if(!API_URL)return message("aiAdviceMessage","Backend belum terhubung. Isi API_URL di app.js dengan URL Apps Script /exec lalu deploy ulang.","error");
+  if(!API_URL)return message("aiAdviceMessage","Backend belum terhubung. Periksa frontend/config.js dan pastikan window.BUDGET_TRACKER_API_URL berisi URL Apps Script /exec.","error");
   const btn=$("aiAdviceBtn");btn.disabled=true;btn.textContent="Menganalisis…";message("aiAdviceMessage","Gemini sedang menganalisis ringkasan budget dan transaksi terbaru…");
   try{
     const context=buildAiContext();
@@ -289,7 +289,7 @@ $("sendAdviceBtn").addEventListener("click",async()=>{
   const target=$("whatsappTarget").value.trim();
   if(!latestAiAdvice)return message("aiAdviceMessage","Buat saran AI terlebih dahulu.","error");
   if(!target)return message("aiAdviceMessage","Isi nomor WhatsApp tujuan terlebih dahulu.","error");
-  if(!API_URL)return message("aiAdviceMessage","Backend belum terhubung. Isi API_URL di app.js.","error");
+  if(!API_URL)return message("aiAdviceMessage","Backend belum terhubung. Periksa URL Apps Script /exec di frontend/config.js.","error");
   const btn=$("sendAdviceBtn");btn.disabled=true;btn.textContent="Mengirim…";message("aiAdviceMessage","Mengirim saran melalui Fonnte…");
   try{
     const result=await api("sendAiAdviceWhatsapp",{target,message:latestAiAdvice,period:period()});
