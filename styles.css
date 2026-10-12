@@ -8,3 +8,5 @@
 
 /* Payday cycle is configured with the budget plan, not inside the AI panel. */
 .period-range-block{margin-top:18px;padding:16px;border:1px solid var(--border);border-radius:14px;background:var(--surface-soft,rgba(100,116,139,.045))}.period-range-block h3{margin:0 0 4px;font-size:1rem}.period-range-block .payday-form{margin-top:12px}.period-range-block .payday-hint{margin-bottom:0}
+
+.total-budget-cell{font-weight:700;white-space:nowrap}.table-wrap table{min-width:1040px}

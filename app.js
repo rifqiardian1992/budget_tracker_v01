@@ -24,11 +24,15 @@ function sample(){
     ["Tabungan Umum","percent",7.5,true],
     ["Cadangan / Miscellaneous","percent",5,false]
   ];
-  return seed.map(([name,mode,pct,mandatory])=>({id:nextId++,name,mode,amount:mainBudget()*pct/100,percent:pct,mandatory}));
+  return seed.map(([name,mode,pct,mandatory])=>{const baseBudget=mainBudget()*pct/100;return {id:nextId++,name,mode,baseBudget,additionalBudget:0,amount:baseBudget,percent:pct,mandatory};});
 }
 function normalize(item){
-  if(item.mode==="percent") item.amount=mainBudget()*num(item.percent)/100;
-  else item.percent=mainBudget()?num(item.amount)/mainBudget()*100:0;
+  // Legacy browser data only had amount; interpret it as base budget, with zero carryover.
+  if(!Number.isFinite(Number(item.baseBudget))) item.baseBudget=num(item.amount);
+  if(!Number.isFinite(Number(item.additionalBudget))) item.additionalBudget=0;
+  if(item.mode==="percent") item.baseBudget=mainBudget()*num(item.percent)/100;
+  else item.percent=mainBudget()?num(item.baseBudget)/mainBudget()*100:0;
+  item.amount=round(num(item.baseBudget)+Number(item.additionalBudget||0));
 }
 function recalc(){items.forEach(normalize);}
 function renderItems(){
@@ -37,8 +41,10 @@ function renderItems(){
     const tr=document.createElement("tr");
     tr.innerHTML=`<td><input data-field="name" data-id="${it.id}" aria-label="Nama pos" value="${escapeHtml(it.name)}" placeholder="Nama pos"></td>
     <td><select data-field="mode" data-id="${it.id}" aria-label="Mode input"><option value="amount" ${it.mode==="amount"?"selected":""}>Nominal</option><option value="percent" ${it.mode==="percent"?"selected":""}>Persentase</option></select></td>
-    <td><input data-field="amount" data-id="${it.id}" aria-label="Nominal" type="number" min="0" step="1000" value="${round(it.amount)}"></td>
-    <td><input data-field="percent" data-id="${it.id}" aria-label="Persentase" type="number" min="0" step=".1" value="${round(it.percent)}"></td>
+    <td><input data-field="baseBudget" data-id="${it.id}" aria-label="Base Budget" type="number" min="0" step="1000" value="${round(it.baseBudget)}"></td>
+    <td><input data-field="additionalBudget" data-id="${it.id}" aria-label="Additional Budget" type="number" step="1000" value="${round(it.additionalBudget)}"></td>
+    <td class="total-budget-cell">${fmt(it.amount)}</td>
+    <td><input data-field="percent" data-id="${it.id}" aria-label="Persentase base budget" type="number" min="0" step=".1" value="${round(it.percent)}"></td>
     <td class="check-cell"><input data-field="mandatory" data-id="${it.id}" aria-label="Pos wajib" type="checkbox" ${it.mandatory?"checked":""}></td>
     <td><button class="delete-btn" data-delete="${it.id}" type="button">Hapus</button></td>`;
     body.appendChild(tr);
@@ -46,10 +52,10 @@ function renderItems(){
   updateSummary(); renderCategoryOptions();
 }
 function updateSummary(){
-  const total=items.reduce((s,x)=>s+num(x.amount),0), main=mainBudget(), pct=main?total/main*100:0;
-  $("mainBudgetDisplay").textContent=fmt(main); $("remainingDisplay").textContent=fmt(main-total);
-  $("remainingDisplay").style.color=main-total<0?"var(--red)":"var(--text)";
-  $("allocationTotal").textContent=`Total alokasi: ${fmt(total)}`; $("allocationPercent").textContent=`${round(pct)}% teralokasi`;
+  const main=mainBudget(), baseTotal=items.reduce((s,x)=>s+num(x.baseBudget),0), additionalTotal=items.reduce((s,x)=>s+Number(x.additionalBudget||0),0), total=items.reduce((s,x)=>s+Number(x.amount||0),0), pct=main?baseTotal/main*100:0;
+  $("mainBudgetDisplay").textContent=fmt(main); $("remainingDisplay").textContent=fmt(main-baseTotal);
+  $("remainingDisplay").style.color=main-baseTotal<0?"var(--red)":"var(--text)";
+  $("allocationTotal").textContent=`Total anggaran pos: ${fmt(total)} (base ${fmt(baseTotal)} · tambahan bersih ${additionalTotal>=0?"+":""}${fmt(additionalTotal)})`; $("allocationPercent").textContent=`${round(pct)}% base teralokasi`;
   $("allocationProgress").style.width=`${Math.min(100,Math.max(0,pct))}%`; $("allocationProgress").style.background=pct>100?"var(--red)":"var(--primary)";
 }
 function renderCategoryOptions(){
@@ -82,7 +88,7 @@ function renderActual(){
   const month=period(), body=$("actualRows"), txBody=$("transactionsRows");
   body.innerHTML=""; txBody.innerHTML="";
   items.forEach(it=>{
-    const actual=actualForUsagePeriod(it), left=num(it.amount)-actual;
+    const actual=actualForUsagePeriod(it), left=Number(it.amount||0)-actual;
     const tr=document.createElement("tr");
     tr.innerHTML=`<td>${escapeHtml(it.name)}</td><td>${fmt(it.amount)}</td><td>${fmt(actual)}</td><td class="${left<0?"negative":"positive"}">${fmt(left)}</td><td></td>`;
     body.appendChild(tr);
@@ -95,14 +101,14 @@ function renderActual(){
     txBody.appendChild(tr);
   });
 }
-function payload(){return {period:period(),mainBudget:mainBudget(),items:items.map(({name,mode,amount,percent,mandatory})=>({name:name.trim(),mode,amount:round(amount),percent:round(percent),mandatory:Boolean(mandatory)}))};}
+function payload(){return {period:period(),mainBudget:mainBudget(),items:items.map(({name,mode,baseBudget,additionalBudget,amount,percent,mandatory})=>({name:name.trim(),mode,baseBudget:round(baseBudget),additionalBudget:round(additionalBudget),amount:round(amount),percent:round(percent),mandatory:Boolean(mandatory)}))};}
 function localSave(){localStorage.setItem(STORAGE_KEY,JSON.stringify({current:payload(),transactions,paydayStart:$("paydayStart").value||"",paydayNext:$("paydayNext").value||""}));}
 function localLoad(){
   try{
     const saved=JSON.parse(localStorage.getItem(STORAGE_KEY)||"null");
-    if(saved){transactions=saved.transactions||[]; const cur=saved.current||{}; $("budgetDate").value=cur.period||monthNow(); $("mainBudget").value=cur.mainBudget||8000000; $("paydayStart").value=saved.paydayStart||""; $("paydayNext").value=saved.paydayNext||""; items=(cur.items||[]).map(x=>({...x,id:nextId++}));}
-    else {$("budgetDate").value=monthNow();$("mainBudget").value=8000000;items=sample();}
-  }catch(e){$("budgetDate").value=monthNow();$("mainBudget").value=8000000;items=sample();}
+    if(saved){transactions=saved.transactions||[]; const cur=saved.current||{}; $("budgetDate").value=cur.period||monthNow(); $("mainBudget").value=cur.mainBudget||8000000; $("paydayStart").value=saved.paydayStart||""; $("paydayNext").value=saved.paydayNext||""; items=(cur.items||[]).map(x=>({...x,baseBudget:Number.isFinite(Number(x.baseBudget))?Number(x.baseBudget):Number(x.amount)||0,additionalBudget:Number.isFinite(Number(x.additionalBudget))?Number(x.additionalBudget):0,id:nextId++}));}
+    else {$("budgetDate").value="2026-10";$("mainBudget").value=8000000;$("paydayStart").value="2026-10-24";$("paydayNext").value="2026-11-24";items=sample();}
+  }catch(e){$("budgetDate").value="2026-10";$("mainBudget").value=8000000;$("paydayStart").value="2026-10-24";$("paydayNext").value="2026-11-24";items=sample();}
   recalc();renderItems();renderActual();
 }
 async function api(action,data={}){
@@ -147,11 +153,13 @@ async function checkBackendConnection(){
 $("budgetRows").addEventListener("input",e=>{
   const el=e.target,id=Number(el.dataset.id),field=el.dataset.field,it=items.find(x=>x.id===id);if(!it||!field)return;
   if(field==="name"){it.name=el.value;renderCategoryOptions();return;}
-  if(field==="amount"){it.amount=num(el.value);it.mode="amount";it.percent=mainBudget()?it.amount/mainBudget()*100:0;}
-  if(field==="percent"){it.percent=num(el.value);it.mode="percent";it.amount=mainBudget()*it.percent/100;}
+  if(field==="baseBudget"){it.baseBudget=num(el.value);it.mode="amount";it.percent=mainBudget()?it.baseBudget/mainBudget()*100:0;}
+  if(field==="additionalBudget"){it.additionalBudget=Number(el.value)||0;}
+  if(field==="percent"){it.percent=num(el.value);it.mode="percent";it.baseBudget=mainBudget()*it.percent/100;}
+  normalize(it);
   const row=el.closest("tr");
-  const amountEl=row.querySelector('[data-field="amount"]'),percentEl=row.querySelector('[data-field="percent"]'),modeEl=row.querySelector('[data-field="mode"]');
-  amountEl.value=round(it.amount);percentEl.value=round(it.percent);modeEl.value=it.mode;updateSummary();
+  const baseEl=row.querySelector('[data-field="baseBudget"]'),additionalEl=row.querySelector('[data-field="additionalBudget"]'),percentEl=row.querySelector('[data-field="percent"]'),modeEl=row.querySelector('[data-field="mode"]'),totalEl=row.querySelector('.total-budget-cell');
+  baseEl.value=round(it.baseBudget);additionalEl.value=round(it.additionalBudget);percentEl.value=round(it.percent);modeEl.value=it.mode;totalEl.textContent=fmt(it.amount);updateSummary();
 });
 $("budgetRows").addEventListener("change",e=>{
   const el=e.target,it=items.find(x=>x.id===Number(el.dataset.id));if(!it)return;
@@ -161,7 +169,7 @@ $("budgetRows").addEventListener("change",e=>{
 $("budgetRows").addEventListener("click",e=>{const id=Number(e.target.dataset.delete);if(!id)return;items=items.filter(x=>x.id!==id);renderItems();});
 $("mainBudget").addEventListener("input",()=>{recalc();renderItems();});
 $("budgetDate").addEventListener("change",()=>{renderActual();recommendation=null;message("recommendationMessage","Periode berubah. Hitung kembali rekomendasi jika diperlukan.");});
-$("addRowBtn").addEventListener("click",()=>{items.push({id:nextId++,name:"",mode:"amount",amount:0,percent:0,mandatory:false});renderItems();$("budgetRows").querySelectorAll('[data-field="name"]').item(items.length-1)?.focus();});
+$("addRowBtn").addEventListener("click",()=>{items.push({id:nextId++,name:"",mode:"amount",baseBudget:0,additionalBudget:0,amount:0,percent:0,mandatory:false});renderItems();$("budgetRows").querySelectorAll('[data-field="name"]').item(items.length-1)?.focus();});
 $("resetBtn").addEventListener("click",()=>{if(!confirm("Pulihkan data contoh?"))return;nextId=1;$("mainBudget").value=8000000;items=sample();recalc();renderItems();message("planMessage","Data contoh dipulihkan. Simpan jika ingin menyimpan ke backend.");});
 $("saveBtn").addEventListener("click",async()=>{
   const data=payload();if(!data.period||!data.mainBudget)return message("planMessage","Pilih periode dan isi Main Budget lebih besar dari nol.","error");if(data.items.some(x=>!x.name))return message("planMessage","Semua pos harus memiliki nama.","error");
@@ -225,13 +233,13 @@ $("generateBtn").addEventListener("click",makeRecommendation);
 $("discardRecommendationBtn").addEventListener("click",()=>{recommendation=null;renderRecommendation();message("recommendationMessage","Draft rekomendasi dibuang.");});
 $("applyRecommendationBtn").addEventListener("click",()=>{
   if(!recommendation)return message("recommendationMessage","Hitung rekomendasi terlebih dahulu.","error");
-  items=items.map(it=>{const r=recommendation.draft.find(x=>x.name===it.name);return r?{...it,amount:r.final,mode:"amount",percent:mainBudget()?r.final/mainBudget()*100:0}:it;});
+  items=items.map(it=>{const r=recommendation.draft.find(x=>x.name===it.name);return r?{...it,baseBudget:r.final,additionalBudget:0,amount:r.final,mode:"amount",percent:mainBudget()?r.final/mainBudget()*100:0}:it;});
   renderItems();message("recommendationMessage","Rekomendasi diterapkan ke editor sebagai draft. Klik Simpan anggaran untuk menyimpan.","success");
   document.querySelector('[data-tab="plan"]').click();
 });
 $("saveRecommendationBtn").addEventListener("click",async()=>{
   if(!recommendation)return message("recommendationMessage","Hitung rekomendasi terlebih dahulu.","error");
-  items=items.map(it=>{const r=recommendation.draft.find(x=>x.name===it.name);return r?{...it,amount:r.final,mode:"amount",percent:mainBudget()?r.final/mainBudget()*100:0}:it;});
+  items=items.map(it=>{const r=recommendation.draft.find(x=>x.name===it.name);return r?{...it,baseBudget:r.final,additionalBudget:0,amount:r.final,mode:"amount",percent:mainBudget()?r.final/mainBudget()*100:0}:it;});
   renderItems();
   const data=payload();
   const btn=$("saveRecommendationBtn"), original=btn.textContent;btn.disabled=true;btn.textContent="Menyimpan…";
@@ -264,10 +272,10 @@ function buildAiContext(){
     const catTx=periodTransactions.filter(t=>t.itemName===it.name);
     const expense=round(catTx.filter(t=>t.type!=="income").reduce((a,t)=>a+num(t.amount),0));
     const income=round(catTx.filter(t=>t.type==="income").reduce((a,t)=>a+num(t.amount),0));
-    return {pos:it.name,budget:round(it.amount),expense,income,remaining:round(num(it.amount)-expense+income),mandatory:Boolean(it.mandatory)};
+    return {pos:it.name,baseBudget:round(it.baseBudget),additionalBudget:round(it.additionalBudget),budget:round(it.amount),expense,income,remaining:round(Number(it.amount)-expense+income),mandatory:Boolean(it.mandatory)};
   });
   const recent=periodTransactions.sort((a,b)=>`${b.date}-${b.id}`.localeCompare(`${a.date}-${a.id}`)).slice(0,12).map(t=>({date:t.date,type:t.type==="income"?"pemasukan":"pengeluaran",pos:t.itemName,description:t.description,amount:round(t.amount)}));
-  return {period:month,paydayStart:start,paydayNext:next,today,daysUntilNextPayday:Math.max(0,dayDifference(today,next)),usagePeriodEndExclusive:next,mainBudget:mainBudget(),allocated:round(items.reduce((a,x)=>a+num(x.amount),0)),categories:categorySummary,recentTransactions:recent};
+  return {period:month,paydayStart:start,paydayNext:next,today,daysUntilNextPayday:Math.max(0,dayDifference(today,next)),usagePeriodEndExclusive:next,mainBudget:mainBudget(),allocated:round(items.reduce((a,x)=>Number(a)+Number(x.amount||0),0)),baseAllocated:round(items.reduce((a,x)=>a+num(x.baseBudget),0)),netAdditional:round(items.reduce((a,x)=>a+Number(x.additionalBudget||0),0)),categories:categorySummary,recentTransactions:recent};
 }
 function renderAiAdvice(text){
   latestAiAdvice=String(text||"").trim();const box=$("aiAdviceResult");box.hidden=!latestAiAdvice;

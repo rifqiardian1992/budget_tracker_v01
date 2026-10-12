@@ -4,14 +4,14 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#101827">
-  <title>Budget Tracker v0.3.6 - Stable Sync</title>
-  <link rel="stylesheet" href="styles.css?v=0.3.6">
+  <title>Budget Tracker v0.3.7 - Base + Additional Budget</title>
+  <link rel="stylesheet" href="styles.css?v=0.3.7">
 </head>
 <body>
 <div class="app-shell">
   <header class="topbar">
     <div><div class="eyebrow">PERSONAL FINANCE</div><h1>Budget Tracker</h1><p class="muted">Anggaran adaptif berdasarkan realisasi pengeluaran.</p></div>
-    <span class="version">v0.3.5 AI · Stable Sync</span>
+    <span class="version">v0.3.7 · Budget Carryover</span>
   </header>
 
   <nav class="tabs" aria-label="Navigasi aplikasi">
@@ -38,15 +38,15 @@
         </div>
         <div class="budget-summary">
           <div><span class="muted small">Main Budget</span><strong id="mainBudgetDisplay">Rp0</strong></div>
-          <div><span class="muted small">Sisa belum dialokasikan</span><strong id="remainingDisplay">Rp0</strong></div>
+          <div><span class="muted small">Sisa base belum dialokasikan</span><strong id="remainingDisplay">Rp0</strong></div>
         </div>
         <div class="progress-track"><div id="allocationProgress" class="progress-fill"></div></div>
         <div class="progress-meta"><span id="allocationPercent">0% teralokasi</span><span id="allocationTotal">Total alokasi: Rp0</span></div>
       </section>
 
       <section class="panel">
-        <div class="section-heading"><div><div class="eyebrow">ALLOCATIONS</div><h2>Pos budget</h2><p class="muted">Tandai pos wajib agar rekomendasi tidak menguranginya.</p></div><button id="addRowBtn" class="button button-secondary" type="button">+ Tambah pos</button></div>
-        <div class="table-wrap"><table><thead><tr><th>Nama pos</th><th>Mode input</th><th>Nominal (Rp)</th><th>Persentase</th><th>Pos wajib</th><th></th></tr></thead><tbody id="budgetRows"></tbody></table></div>
+        <div class="section-heading"><div><div class="eyebrow">ALLOCATIONS</div><h2>Pos budget</h2><p class="muted">Base Budget adalah alokasi dasar dari penghasilan. Additional Budget adalah sisa periode sebelumnya: positif untuk surplus, negatif untuk defisit. Total pos = Base + Additional.</p></div><button id="addRowBtn" class="button button-secondary" type="button">+ Tambah pos</button></div>
+        <div class="table-wrap"><table><thead><tr><th>Nama pos</th><th>Mode base</th><th>Base Budget (Rp)</th><th>Additional Budget (Rp ±)</th><th>Total Budget (Rp)</th><th>% base</th><th>Pos wajib</th><th></th></tr></thead><tbody id="budgetRows"></tbody></table></div>
         <div id="emptyState" class="empty-state" hidden>Belum ada pos budget. Klik “Tambah pos” untuk memulai.</div>
         <div class="actions"><button id="resetBtn" class="button button-ghost" type="button">Reset contoh</button><button id="saveBtn" class="button button-primary" type="button">Simpan anggaran</button></div>
         <p id="planMessage" class="message" role="status" aria-live="polite"></p>
@@ -100,8 +100,8 @@
       </ul></section>
     </section>
   </main>
-  <footer>Budget Tracker v0.3.6 · GitHub Pages + Apps Script + Sheets + Gemini + Fonnte</footer>
+  <footer>Budget Tracker v0.3.7 · Base + Additional Budget · Payday Cycle · Gemini + Fonnte</footer>
 </div>
-<script src="config.js?v=0.3.6"></script>
-<script src="app.js?v=0.3.6"></script>
+<script src="config.js?v=0.3.7"></script>
+<script src="app.js?v=0.3.7"></script>
 </body></html>
