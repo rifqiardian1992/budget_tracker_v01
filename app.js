@@ -185,7 +185,7 @@ $("resetBtn").addEventListener("click",()=>{if(!confirm("Pulihkan data contoh?")
 $("saveBtn").addEventListener("click",async()=>{
   const data=payload();if(!data.period||!data.mainBudget)return message("planMessage","Pilih periode dan isi Main Budget lebih besar dari nol.","error");if(data.items.some(x=>!x.name))return message("planMessage","Semua pos harus memiliki nama.","error");const range=usageRange();if(!range)return message("planMessage","Tanggal gajian awal dan berikutnya wajib diisi, dan tanggal berikutnya harus setelah tanggal awal.","error");if(data.period!==range.start.slice(0,7))return message("planMessage","Periode anggaran harus sesuai bulan tanggal gajian awal.","error");
   const btn=$("saveBtn"), original=btn.textContent;btn.disabled=true;btn.textContent="Menyimpan…";
-  try{const result=await api("saveAll",{...data,transactions});if(result&&!result.success)throw new Error(result.message||"Gagal menyimpan");localSave();message("planMessage",result?"Anggaran dan transaksi tersimpan ke Google Sheets.":"Tersimpan di browser saja. Atur URL Apps Script di frontend/config.js untuk sinkronisasi Google Sheets.", "success");}
+  try{const result=await api("saveAll",{...data,paydayStart:$("paydayStart").value,paydayNext:$("paydayNext").value,transactions});if(result&&!result.success)throw new Error(result.message||"Gagal menyimpan");localSave();message("planMessage",result?"Anggaran dan transaksi tersimpan ke Google Sheets.":"Tersimpan di browser saja. Atur URL Apps Script di frontend/config.js untuk sinkronisasi Google Sheets.", "success");}
   catch(e){localSave();message("planMessage",`Sinkronisasi gagal: ${e.message}. Salinan lokal tetap disimpan di browser; periksa status backend di atas.`, "error");}
   finally{btn.disabled=false;btn.textContent=original;}
 });
@@ -305,42 +305,53 @@ async function loadHistoryPeriods(){
     let periods=[];
     const result=await api("getHistoricalPeriods");
     if(result&&result.success&&Array.isArray(result.data)) periods=result.data;
-    else if(!API_URL) periods=[...new Set(transactions.map(t=>monthOf(t.date)).filter(x=>/^\d{4}-\d{2}$/.test(x)))].sort().reverse();
+    else if(!API_URL) periods=[];
     else throw new Error(result?.message||"Gagal memuat daftar periode dari Google Sheets.");
-    const current=period();
-    if(!periods.includes(current)&&transactions.some(t=>monthOf(t.date)===current)) periods.unshift(current);
+    // The active cycle can be selected even before its budget has been saved again.
+    const active=usageRange();
+    if(active&&active.start&&active.next&&!periods.some(x=>x.start===active.start&&x.next===active.next)){
+      periods.push({start:active.start,next:active.next,source:"browser"});
+    }
+    // Older versions did not persist payday dates. Never guess a cycle from calendar months.
+    periods=periods.filter(x=>/^\d{4}-\d{2}-\d{2}$/.test(x.start||"")&&/^\d{4}-\d{2}-\d{2}$/.test(x.next||"")&&x.next>x.start)
+      .sort((a,b)=>b.start.localeCompare(a.start));
     select.innerHTML='';
-    if(!periods.length){select.innerHTML='<option value="">Belum ada data historis</option>';message("historyMessage","Belum ditemukan periode pada Google Sheets. Simpan transaksi/anggaran terlebih dahulu.","error");select.dataset.loaded="true";return;}
-    periods.forEach(p=>{const o=document.createElement("option");o.value=p;o.textContent=periodLabel(p);select.appendChild(o);});
-    select.value=periods.includes(current)?current:periods[0];
+    if(!periods.length){select.innerHTML='<option value="">Belum ada siklus gajian tersimpan</option>';message("historyMessage","Belum ada rentang siklus gajian yang tersimpan. Buka Rencana Anggaran, pastikan tanggal gajian awal dan berikutnya benar, lalu klik Simpan anggaran. Siklus aktif juga dapat ditampilkan selama tanggalnya tersedia di browser ini.","error");select.dataset.loaded="true";return;}
+    periods.forEach(c=>{const o=document.createElement("option");o.value=`${c.start}|${c.next}`;o.textContent=cycleLabel(c.start,c.next);select.appendChild(o);});
+    const activeValue=active?`${active.start}|${active.next}`:"";
+    select.value=[...select.options].some(o=>o.value===activeValue)?activeValue:select.options[0].value;
     select.dataset.loaded="true";
-    message("historyMessage","Periode tersedia. Pilih periode, lalu klik Tampilkan.");
+    message("historyMessage","Pilih siklus gajian, lalu klik Tampilkan.");
   }catch(err){select.innerHTML='<option value="">Gagal memuat periode</option>';message("historyMessage",err.message||"Gagal memuat daftar periode.","error");}
 }
-function periodLabel(p){const [y,m]=String(p).split("-").map(Number);return new Intl.DateTimeFormat("id-ID",{month:"long",year:"numeric"}).format(new Date(y,m-1,1));}
+function cycleLabel(start,next){
+  const d=s=>new Intl.DateTimeFormat("id-ID",{day:"numeric",month:"short",year:"numeric"}).format(new Date(`${s}T12:00:00`));
+  return `${d(start)} – ${d(next)} (tanggal akhir tidak termasuk)`;
+}
 async function showHistory(){
-  const p=$("historyPeriod").value;
-  if(!p)return message("historyMessage","Pilih periode yang valid terlebih dahulu.","error");
+  const value=$("historyPeriod").value;
+  if(!value||!value.includes("|"))return message("historyMessage","Pilih siklus gajian yang valid terlebih dahulu.","error");
+  const [start,next]=value.split("|");
   const btn=$("showHistoryBtn");btn.disabled=true;btn.textContent="Memuat…";
   try{
     let rows=[];
     if(API_URL){
-      const result=await api("getHistoricalTransactions",{period:p});
+      const result=await api("getHistoricalTransactions",{startDate:start,nextDate:next});
       if(!result||!result.success)throw new Error(result?.message||"Gagal memuat transaksi historis.");
       rows=Array.isArray(result.data)?result.data:[];
-    }else rows=transactions.filter(t=>monthOf(t.date)===p);
+    }else rows=transactions.filter(t=>String(t.date||"")>=start&&String(t.date||"")<next);
     historyRows=rows.slice().sort((a,b)=>String(b.date).localeCompare(String(a.date))||String(b.id||"").localeCompare(String(a.id||"")));
-    renderHistory(p);
-    message("historyMessage",historyRows.length ? `Data periode ${periodLabel(p)} berhasil ditampilkan${API_URL?" dari Google Sheets":" dari data browser lokal"} (${historyRows.length} transaksi).` : `Tidak ada transaksi dengan tanggal pada ${periodLabel(p)}. Riwayat kini difilter berdasarkan tanggal transaksi, bukan periode anggaran.`, historyRows.length ? "success" : "error");
+    renderHistory(start,next);
+    message("historyMessage",historyRows.length?`Siklus ${cycleLabel(start,next)} berhasil ditampilkan (${historyRows.length} transaksi).`:`Tidak ada transaksi pada siklus ${cycleLabel(start,next)}.`,historyRows.length?"success":"error");
   }catch(err){$("historyReportContent").hidden=true;$("printHistoryBtn").disabled=true;message("historyMessage",err.message||"Gagal memuat data historis.","error");}
   finally{btn.disabled=false;btn.textContent="Tampilkan";}
 }
-function renderHistory(p){
+function renderHistory(start,next){
   const income=historyRows.filter(t=>t.type==="income").reduce((a,t)=>a+Number(t.amount||0),0);
   const expense=historyRows.filter(t=>t.type!=="income").reduce((a,t)=>a+Number(t.amount||0),0);
   const net=income-expense;
-  $("historyTitle").textContent=`Cashflow ${periodLabel(p)}`;
-  $("historyMeta").textContent=`Periode data: ${p} · ${historyRows.length} transaksi`;
+  $("historyTitle").textContent=`Cashflow ${cycleLabel(start,next)}`;
+  $("historyMeta").textContent=`Periode gajian: ${start} sampai sebelum ${next} · ${historyRows.length} transaksi`;
   $("historyGenerated").textContent=`Dicetak pada ${new Intl.DateTimeFormat("id-ID",{dateStyle:"long",timeStyle:"short"}).format(new Date())}`;
   $("historyIncome").textContent=fmt(income);$("historyExpense").textContent=fmt(expense);$("historyNet").textContent=fmt(net);
   $("historyNet").className=net<0?"negative":net>0?"positive":"";
