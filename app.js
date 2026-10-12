@@ -1,7 +1,7 @@
 (() => {
 "use strict";
 const $ = id => document.getElementById(id);
-const API_URL = "https://script.google.com/macros/s/AKfycbxG86upLfMmmalCrwe9J6mhvwaGjimx08tLOKkood-szmzxET13YWTR4mrbFy9qKHPx/exec"; // Paste deployed Apps Script /exec URL here. Keep API keys on Apps Script only.
+const API_URL = String(window.BUDGET_TRACKER_API_URL || "").trim(); // Set in config.js; never put Gemini/Fonnte keys here.
 const STORAGE_KEY = "budget-tracker-v02";
 let items = [], transactions = [], nextId = 1, recommendation = null, latestAiAdvice = "";
 const fmt = n => new Intl.NumberFormat("id-ID",{style:"currency",currency:"IDR",maximumFractionDigits:0}).format(Number(n)||0);
@@ -107,12 +107,42 @@ function localLoad(){
 }
 async function api(action,data={}){
   if(!API_URL) return null;
-  if(action==="getBudget"||action==="getTransactions"){
-    const url=new URL(API_URL);url.searchParams.set("action",action);Object.entries(data).forEach(([k,v])=>url.searchParams.set(k,v));
-    const r=await fetch(url);return r.json();
+  const controller=new AbortController();
+  const timeout=setTimeout(()=>controller.abort(),18000);
+  try {
+    let response;
+    if(action==="getBudget"||action==="getTransactions"||action==="health"){
+      const url=new URL(API_URL);
+      url.searchParams.set("action",action);
+      Object.entries(data).forEach(([k,v])=>url.searchParams.set(k,String(v)));
+      response=await fetch(url.toString(),{method:"GET",signal:controller.signal,cache:"no-store"});
+    } else {
+      response=await fetch(API_URL,{method:"POST",headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify({action,...data}),signal:controller.signal,cache:"no-store"});
+    }
+    if(!response.ok) throw new Error(`HTTP ${response.status} dari Apps Script`);
+    const raw=await response.text();
+    let parsed;
+    try { parsed=JSON.parse(raw); }
+    catch (_) { throw new Error("Respons backend bukan JSON. Periksa URL /exec dan akses deployment Web App."); }
+    return parsed;
+  } catch(err) {
+    if(err && err.name==="AbortError") throw new Error("Permintaan ke Apps Script melewati batas 18 detik. Periksa URL /exec, akses deployment, dan koneksi.");
+    if(err instanceof TypeError) throw new Error("Browser gagal menghubungi Apps Script. Periksa URL /exec, deployment, dan koneksi jaringan.");
+    throw err;
+  } finally { clearTimeout(timeout); }
+}
+async function checkBackendConnection(){
+  const badge=$("connectionStatus");
+  if(!API_URL){badge.textContent="Mode lokal · backend belum diatur";badge.className="status status-demo";return;}
+  badge.textContent="Memeriksa koneksi…";badge.className="status status-demo";
+  try {
+    const result=await api("health");
+    if(!result || result.success!==true) throw new Error(result?.message||"Health check gagal");
+    badge.textContent="Backend terhubung";badge.className="status status-connected";
+  } catch(err) {
+    badge.textContent="Backend tidak terjangkau";badge.className="status status-error";
+    console.error("Budget Tracker backend health check:",err);
   }
-  const r=await fetch(API_URL,{method:"POST",headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify({action,...data})});
-  return r.json();
 }
 $("budgetRows").addEventListener("input",e=>{
   const el=e.target,id=Number(el.dataset.id),field=el.dataset.field,it=items.find(x=>x.id===id);if(!it||!field)return;
@@ -135,8 +165,10 @@ $("addRowBtn").addEventListener("click",()=>{items.push({id:nextId++,name:"",mod
 $("resetBtn").addEventListener("click",()=>{if(!confirm("Pulihkan data contoh?"))return;nextId=1;$("mainBudget").value=8000000;items=sample();recalc();renderItems();message("planMessage","Data contoh dipulihkan. Simpan jika ingin menyimpan ke backend.");});
 $("saveBtn").addEventListener("click",async()=>{
   const data=payload();if(!data.period||!data.mainBudget)return message("planMessage","Pilih periode dan isi Main Budget lebih besar dari nol.","error");if(data.items.some(x=>!x.name))return message("planMessage","Semua pos harus memiliki nama.","error");
-  try{const result=await api("saveAll",{...data,transactions});if(result&&!result.success)throw new Error(result.message||"Gagal menyimpan");localSave();message("planMessage",result?"Anggaran dan transaksi tersimpan ke Google Sheets.":"Tersimpan di browser. Isi API_URL untuk mengaktifkan Google Sheets.", "success");}
-  catch(e){localSave();message("planMessage",`Backend gagal: ${e.message}. Data disimpan lokal.`, "error");}
+  const btn=$("saveBtn"), original=btn.textContent;btn.disabled=true;btn.textContent="Menyimpan…";
+  try{const result=await api("saveAll",{...data,transactions});if(result&&!result.success)throw new Error(result.message||"Gagal menyimpan");localSave();message("planMessage",result?"Anggaran dan transaksi tersimpan ke Google Sheets.":"Tersimpan di browser saja. Atur URL Apps Script di frontend/config.js untuk sinkronisasi Google Sheets.", "success");}
+  catch(e){localSave();message("planMessage",`Sinkronisasi gagal: ${e.message}. Salinan lokal tetap disimpan di browser; periksa status backend di atas.`, "error");}
+  finally{btn.disabled=false;btn.textContent=original;}
 });
 $("addTxBtn").addEventListener("click",async()=>{
   const id=Number($("txCategory").value),it=items.find(x=>x.id===id),date=$("txDate").value,description=$("txDescription").value.trim(),amount=num($("txAmount").value);
@@ -145,9 +177,11 @@ $("addTxBtn").addEventListener("click",async()=>{
   if(!description||amount<=0)return message("txMessage","Isi deskripsi dan nominal transaksi yang valid.","error");
   const type=$("txType").value;
   const tx={id:`tx-${Date.now()}-${Math.random().toString(36).slice(2,7)}`,date,type,itemName:it.name,description,amount};
+  const btn=$("addTxBtn"), original=btn.textContent;btn.disabled=true;btn.textContent="Menyimpan…";
   transactions.push(tx);
-  try{const result=await api("saveTransaction",tx);if(result&&!result.success)throw new Error(result.message||"Gagal");localSave();message("txMessage",result?(type==="income"?"Pemasukan tersimpan ke Google Sheets.":"Pengeluaran tersimpan ke Google Sheets."):(type==="income"?"Pemasukan tersimpan di browser. Hubungkan API_URL untuk sinkronisasi.":"Pengeluaran tersimpan di browser. Hubungkan API_URL untuk sinkronisasi."), "success");}
-  catch(e){localSave();message("txMessage",`Backend gagal: ${e.message}. Transaksi tersimpan lokal.`, "error");}
+  try{const result=await api("saveTransaction",tx);if(result&&!result.success)throw new Error(result.message||"Gagal");localSave();message("txMessage",result?(type==="income"?"Pemasukan tersimpan ke Google Sheets.":"Pengeluaran tersimpan ke Google Sheets."):(type==="income"?"Pemasukan tersimpan di browser saja. Atur frontend/config.js untuk sinkronisasi.":"Pengeluaran tersimpan di browser saja. Atur frontend/config.js untuk sinkronisasi."), "success");}
+  catch(e){localSave();message("txMessage",`Sinkronisasi gagal: ${e.message}. Transaksi tetap disimpan lokal di browser.`, "error");}
+  finally{btn.disabled=false;btn.textContent=original;}
   $("txDescription").value="";$("txAmount").value="";renderActual();
 });
 $("transactionsRows").addEventListener("click",async e=>{
@@ -200,8 +234,10 @@ $("saveRecommendationBtn").addEventListener("click",async()=>{
   items=items.map(it=>{const r=recommendation.draft.find(x=>x.name===it.name);return r?{...it,amount:r.final,mode:"amount",percent:mainBudget()?r.final/mainBudget()*100:0}:it;});
   renderItems();
   const data=payload();
-  try{const result=await api("saveAll",{...data,transactions});if(result&&!result.success)throw new Error(result.message||"Gagal");localSave();message("recommendationMessage",result?"Rekomendasi disimpan ke Google Sheets.":"Rekomendasi disimpan lokal. Isi API_URL untuk sinkronisasi Google Sheets.","success");}
-  catch(e){localSave();message("recommendationMessage",`Backend gagal: ${e.message}. Draft disimpan lokal.`, "error");}
+  const btn=$("saveRecommendationBtn"), original=btn.textContent;btn.disabled=true;btn.textContent="Menyimpan…";
+  try{const result=await api("saveAll",{...data,transactions});if(result&&!result.success)throw new Error(result.message||"Gagal");localSave();message("recommendationMessage",result?"Rekomendasi disimpan ke Google Sheets.":"Rekomendasi disimpan lokal saja. Atur URL Apps Script di frontend/config.js.","success");}
+  catch(e){localSave();message("recommendationMessage",`Sinkronisasi gagal: ${e.message}. Draft disimpan lokal.`, "error");}
+  finally{btn.disabled=false;btn.textContent=original;}
 });
 document.querySelectorAll(".tab").forEach(btn=>btn.addEventListener("click",()=>{
   document.querySelectorAll(".tab").forEach(b=>b.classList.toggle("active",b===btn));
@@ -266,4 +302,5 @@ $("txDate").value=localDateString();
 $("paydayStart").addEventListener("change",()=>{localSave();renderActual();});
 $("paydayNext").addEventListener("change",()=>{localSave();renderActual();});
 localLoad();
-})();%                                                                                                                                                                               
+checkBackendConnection();
+})();
