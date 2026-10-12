@@ -87,12 +87,18 @@ function actualForUsagePeriod(item){
 function renderActual(){
   const month=period(), body=$("actualRows"), txBody=$("transactionsRows");
   body.innerHTML=""; txBody.innerHTML="";
+  let totalRemaining=0;
   items.forEach(it=>{
-    const actual=actualForUsagePeriod(it), left=Number(it.amount||0)-actual;
+    const actual=actualForUsagePeriod(it), left=round(Number(it.amount||0)-actual);
+    totalRemaining+=left;
     const tr=document.createElement("tr");
     tr.innerHTML=`<td>${escapeHtml(it.name)}</td><td>${fmt(it.amount)}</td><td>${fmt(actual)}</td><td class="${left<0?"negative":"positive"}">${fmt(left)}</td><td></td>`;
     body.appendChild(tr);
   });
+  totalRemaining=round(totalRemaining);
+  const totalDisplay=$("totalRemainingDisplay");
+  if(totalDisplay){totalDisplay.textContent=fmt(totalRemaining);totalDisplay.classList.toggle("negative",totalRemaining<0);totalDisplay.classList.toggle("positive",totalRemaining>=0);}
+
   const monthTx=transactions.filter(t=>isDateInUsagePeriod(t.date)).sort((a,b)=>b.date.localeCompare(a.date));
   $("txEmpty").hidden=monthTx.length>0;
   monthTx.forEach(t=>{
@@ -275,7 +281,8 @@ function buildAiContext(){
     return {pos:it.name,baseBudget:round(it.baseBudget),additionalBudget:round(it.additionalBudget),budget:round(it.amount),expense,income,remaining:round(Number(it.amount)-expense+income),mandatory:Boolean(it.mandatory)};
   });
   const recent=periodTransactions.sort((a,b)=>`${b.date}-${b.id}`.localeCompare(`${a.date}-${a.id}`)).slice(0,12).map(t=>({date:t.date,type:t.type==="income"?"pemasukan":"pengeluaran",pos:t.itemName,description:t.description,amount:round(t.amount)}));
-  return {period:month,paydayStart:start,paydayNext:next,today,daysUntilNextPayday:Math.max(0,dayDifference(today,next)),usagePeriodEndExclusive:next,mainBudget:mainBudget(),allocated:round(items.reduce((a,x)=>Number(a)+Number(x.amount||0),0)),baseAllocated:round(items.reduce((a,x)=>a+num(x.baseBudget),0)),netAdditional:round(items.reduce((a,x)=>a+Number(x.additionalBudget||0),0)),categories:categorySummary,recentTransactions:recent};
+  const totalRemainingBudget=round(categorySummary.reduce((sum,c)=>sum+Number(c.remaining||0),0));
+  return {period:month,paydayStart:start,paydayNext:next,today,daysUntilNextPayday:Math.max(0,dayDifference(today,next)),usagePeriodEndExclusive:next,mainBudget:mainBudget(),allocated:round(items.reduce((a,x)=>Number(a)+Number(x.amount||0),0)),baseAllocated:round(items.reduce((a,x)=>a+num(x.baseBudget),0)),netAdditional:round(items.reduce((a,x)=>a+Number(x.additionalBudget||0),0)),totalRemainingBudget,categories:categorySummary,recentTransactions:recent};
 }
 function renderAiAdvice(text){
   latestAiAdvice=String(text||"").trim();const box=$("aiAdviceResult");box.hidden=!latestAiAdvice;
