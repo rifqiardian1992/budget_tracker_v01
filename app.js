@@ -85,11 +85,11 @@ function renderActual(){
   });
 }
 function payload(){return {period:period(),mainBudget:mainBudget(),items:items.map(({name,mode,amount,percent,mandatory})=>({name:name.trim(),mode,amount:round(amount),percent:round(percent),mandatory:Boolean(mandatory)}))};}
-function localSave(){localStorage.setItem(STORAGE_KEY,JSON.stringify({current:payload(),transactions}));}
+function localSave(){localStorage.setItem(STORAGE_KEY,JSON.stringify({current:payload(),transactions,paydayStart:$("paydayStart").value||"",paydayNext:$("paydayNext").value||""}));}
 function localLoad(){
   try{
     const saved=JSON.parse(localStorage.getItem(STORAGE_KEY)||"null");
-    if(saved){transactions=saved.transactions||[]; const cur=saved.current||{}; $("budgetDate").value=cur.period||monthNow(); $("mainBudget").value=cur.mainBudget||8000000; items=(cur.items||[]).map(x=>({...x,id:nextId++}));}
+    if(saved){transactions=saved.transactions||[]; const cur=saved.current||{}; $("budgetDate").value=cur.period||monthNow(); $("mainBudget").value=cur.mainBudget||8000000; $("paydayStart").value=saved.paydayStart||""; $("paydayNext").value=saved.paydayNext||""; items=(cur.items||[]).map(x=>({...x,id:nextId++}));}
     else {$("budgetDate").value=monthNow();$("mainBudget").value=8000000;items=sample();}
   }catch(e){$("budgetDate").value=monthNow();$("mainBudget").value=8000000;items=sample();}
   recalc();renderItems();renderActual();
@@ -197,15 +197,30 @@ document.querySelectorAll(".tab").forEach(btn=>btn.addEventListener("click",()=>
   document.querySelectorAll(".tab-panel").forEach(p=>p.hidden=p.id!==`tab-${btn.dataset.tab}`);
   if(btn.dataset.tab==="transactions")renderActual();
 }));
+function localDateString(date=new Date()){
+  const y=date.getFullYear(),m=String(date.getMonth()+1).padStart(2,"0"),d=String(date.getDate()).padStart(2,"0");
+  return `${y}-${m}-${d}`;
+}
+function dayDifference(fromDate,toDate){
+  const a=new Date(`${fromDate}T00:00:00`),b=new Date(`${toDate}T00:00:00`);
+  return Math.round((b-a)/86400000);
+}
 function buildAiContext(){
-  const month=period();
-  const categorySummary=items.map(it=>({
-    pos:it.name,budget:round(it.amount),expense:round(transactions.filter(t=>t.itemName===it.name&&monthOf(t.date)===month&&t.type!=="income").reduce((a,t)=>a+num(t.amount),0)),
-    income:round(transactions.filter(t=>t.itemName===it.name&&monthOf(t.date)===month&&t.type==="income").reduce((a,t)=>a+num(t.amount),0)),
-    remaining:round(num(it.amount)-actualFor(it,month)),mandatory:Boolean(it.mandatory)
-  }));
-  const recent=transactions.filter(t=>monthOf(t.date)===month).sort((a,b)=>`${b.date}-${b.id}`.localeCompare(`${a.date}-${a.id}`)).slice(0,12).map(t=>({date:t.date,type:t.type==="income"?"pemasukan":"pengeluaran",pos:t.itemName,description:t.description,amount:round(t.amount)}));
-  return {period:month,mainBudget:mainBudget(),allocated:round(items.reduce((a,x)=>a+num(x.amount),0)),categories:categorySummary,recentTransactions:recent};
+  const month=period(), start=$("paydayStart").value, next=$("paydayNext").value, today=localDateString();
+  if(!start||!next) throw new Error("Isi tanggal gajian saat ini dan tanggal gajian berikutnya terlebih dahulu.");
+  if(start>=next) throw new Error("Tanggal gajian berikutnya harus setelah tanggal gajian saat ini.");
+  if(start>today) throw new Error("Tanggal gajian saat ini tidak boleh berada di masa depan.");
+  if(next<=today) throw new Error("Tanggal gajian berikutnya harus setelah hari ini.");
+  const inPayPeriod=t=>String(t.date||"")>=start&&String(t.date||"")<next;
+  const periodTransactions=transactions.filter(inPayPeriod);
+  const categorySummary=items.map(it=>{
+    const catTx=periodTransactions.filter(t=>t.itemName===it.name);
+    const expense=round(catTx.filter(t=>t.type!=="income").reduce((a,t)=>a+num(t.amount),0));
+    const income=round(catTx.filter(t=>t.type==="income").reduce((a,t)=>a+num(t.amount),0));
+    return {pos:it.name,budget:round(it.amount),expense,income,remaining:round(num(it.amount)-expense+income),mandatory:Boolean(it.mandatory)};
+  });
+  const recent=periodTransactions.sort((a,b)=>`${b.date}-${b.id}`.localeCompare(`${a.date}-${a.id}`)).slice(0,12).map(t=>({date:t.date,type:t.type==="income"?"pemasukan":"pengeluaran",pos:t.itemName,description:t.description,amount:round(t.amount)}));
+  return {period:month,paydayStart:start,paydayNext:next,today,daysUntilNextPayday:Math.max(0,dayDifference(today,next)),usagePeriodEndExclusive:next,mainBudget:mainBudget(),allocated:round(items.reduce((a,x)=>a+num(x.amount),0)),categories:categorySummary,recentTransactions:recent};
 }
 function renderAiAdvice(text){
   latestAiAdvice=String(text||"").trim();const box=$("aiAdviceResult");box.hidden=!latestAiAdvice;
@@ -215,7 +230,9 @@ $("aiAdviceBtn").addEventListener("click",async()=>{
   if(!API_URL)return message("aiAdviceMessage","Backend belum terhubung. Isi API_URL di app.js dengan URL Apps Script /exec lalu deploy ulang.","error");
   const btn=$("aiAdviceBtn");btn.disabled=true;btn.textContent="Menganalisis…";message("aiAdviceMessage","Gemini sedang menganalisis ringkasan budget dan transaksi terbaru…");
   try{
-    const result=await api("generateAiAdvice",{context:buildAiContext()});
+    const context=buildAiContext();
+    localSave();
+    const result=await api("generateAiAdvice",{context});
     if(!result||!result.success)throw new Error(result?.message||"Gagal menghasilkan saran AI.");
     renderAiAdvice(result.advice);message("aiAdviceMessage","Saran berhasil dibuat. Periksa isinya sebelum mengirim ke WhatsApp.","success");
   }catch(e){message("aiAdviceMessage",`Saran AI gagal: ${e.message}`,"error");}
@@ -234,6 +251,8 @@ $("sendAdviceBtn").addEventListener("click",async()=>{
   }catch(e){message("aiAdviceMessage",`Gagal mengirim WhatsApp: ${e.message}`,"error");}
   finally{btn.disabled=false;btn.textContent="Kirim via Fonnte";}
 });
-$("txDate").value=new Date().toISOString().slice(0,10);
+$("txDate").value=localDateString();
+$("paydayStart").addEventListener("change",localSave);
+$("paydayNext").addEventListener("change",localSave);
 localLoad();
 })();
