@@ -4,14 +4,14 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#101827">
-  <title>Budget Tracker v0.2</title>
+  <title>Budget Tracker v0.3 - AI Advice</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
 <div class="app-shell">
   <header class="topbar">
     <div><div class="eyebrow">PERSONAL FINANCE</div><h1>Budget Tracker</h1><p class="muted">Anggaran adaptif berdasarkan realisasi pengeluaran.</p></div>
-    <span class="version">v0.2</span>
+    <span class="version">v0.3 AI</span>
   </header>
 
   <nav class="tabs" aria-label="Navigasi aplikasi">
@@ -47,9 +47,10 @@
 
     <section id="tab-transactions" class="tab-panel" hidden>
       <section class="panel">
-        <div class="section-heading"><div><div class="eyebrow">ACTUAL SPENDING</div><h2>Transaksi pengeluaran</h2><p class="muted">Catat transaksi dan hubungkan ke pos budget untuk menghitung sisa aktual.</p></div></div>
+        <div class="section-heading"><div><div class="eyebrow">ACTUAL SPENDING</div><h2>Transaksi masuk & keluar</h2><p class="muted">Catat pengeluaran dan pemasukan seperti reimbursement, lalu hubungkan ke pos budget.</p></div></div>
         <div class="form-grid transaction-form">
           <label class="field"><span>Tanggal transaksi</span><input id="txDate" type="date"></label>
+          <label class="field"><span>Jenis transaksi</span><select id="txType"><option value="expense">Pengeluaran</option><option value="income">Pemasukan / reimbursement</option></select></label>
           <label class="field"><span>Pos budget</span><select id="txCategory"></select></label>
           <label class="field"><span>Deskripsi</span><input id="txDescription" type="text" placeholder="Contoh: belanja mingguan"></label>
           <label class="field"><span>Nominal (Rp)</span><input id="txAmount" type="number" min="1" step="1000" placeholder="150000"></label>
@@ -60,7 +61,16 @@
       <section class="panel">
         <div class="section-heading"><div><h2>Ringkasan aktual per pos</h2><p class="muted">Angka dihitung untuk periode terpilih.</p></div></div>
         <div class="table-wrap"><table><thead><tr><th>Pos</th><th>Budget</th><th>Aktual</th><th>Sisa</th><th></th></tr></thead><tbody id="actualRows"></tbody></table></div>
-        <div class="table-wrap transaction-table"><table><thead><tr><th>Tanggal</th><th>Pos</th><th>Deskripsi</th><th>Nominal</th><th></th></tr></thead><tbody id="transactionsRows"></tbody></table></div>
+        <section class="ai-advice-card" aria-labelledby="aiAdviceTitle">
+          <div class="section-heading"><div><div class="eyebrow">AI FINANCIAL COACH</div><h2 id="aiAdviceTitle">Saran AI</h2><p class="muted">Analisis sisa budget dan transaksi aktual terbaru menggunakan Gemini.</p></div><button id="aiAdviceBtn" class="button button-primary" type="button">✦ Saran AI</button></div>
+          <div id="aiAdviceResult" class="ai-advice-result" hidden></div>
+          <div class="form-grid whatsapp-form">
+            <label class="field"><span>Nomor WhatsApp tujuan</span><input id="whatsappTarget" type="tel" inputmode="tel" placeholder="Contoh: 081234567890"></label>
+            <div class="field"><span>Kirim saran ke WhatsApp</span><button id="sendAdviceBtn" class="button button-secondary" type="button" disabled>Kirim via Fonnte</button></div>
+          </div>
+          <p id="aiAdviceMessage" class="message" role="status" aria-live="polite">Klik “Saran AI” untuk membuat analisis. API key disimpan di Apps Script, bukan di GitHub.</p>
+        </section>
+        <div class="table-wrap transaction-table"><table><thead><tr><th>Tanggal</th><th>Jenis</th><th>Pos</th><th>Deskripsi</th><th>Nominal</th><th></th></tr></thead><tbody id="transactionsRows"></tbody></table></div>
         <div id="txEmpty" class="empty-state" hidden>Belum ada transaksi pada periode ini.</div>
       </section>
     </section>
@@ -82,7 +92,7 @@
       </ul></section>
     </section>
   </main>
-  <footer>Budget Tracker v0.2 · GitHub Pages + Google Apps Script + Google Sheets</footer>
+  <footer>Budget Tracker v0.3 · GitHub Pages + Apps Script + Sheets + Gemini + Fonnte</footer>
 </div>
 <script src="app.js"></script>
 </body></html>
