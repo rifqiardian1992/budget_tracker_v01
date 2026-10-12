@@ -1,9 +1,9 @@
 (() => {
 "use strict";
 const $ = id => document.getElementById(id);
-const API_URL = "https://script.google.com/macros/s/AKfycbxG86upLfMmmalCrwe9J6mhvwaGjimx08tLOKkood-szmzxET13YWTR4mrbFy9qKHPx/exec"; // Paste deployed Apps Script /exec URL here.
+const API_URL = "https://script.google.com/macros/s/AKfycbxG86upLfMmmalCrwe9J6mhvwaGjimx08tLOKkood-szmzxET13YWTR4mrbFy9qKHPx/exec"; // Paste deployed Apps Script /exec URL here. Keep API keys on Apps Script only.
 const STORAGE_KEY = "budget-tracker-v02";
-let items = [], transactions = [], nextId = 1, recommendation = null;
+let items = [], transactions = [], nextId = 1, recommendation = null, latestAiAdvice = "";
 const fmt = n => new Intl.NumberFormat("id-ID",{style:"currency",currency:"IDR",maximumFractionDigits:0}).format(Number(n)||0);
 const num = v => Math.max(0,Number(v)||0);
 const round = n => Math.round((Number(n)||0)*100)/100;
@@ -58,7 +58,8 @@ function renderCategoryOptions(){
   if(items.some(x=>String(x.id)===prior)) select.value=prior;
 }
 function actualFor(item,month){
-  return transactions.filter(t=>t.itemName===item.name && monthOf(t.date)===month).reduce((s,t)=>s+num(t.amount),0);
+  // Net spending: expenses increase usage; income/reimbursements restore the category balance.
+  return transactions.filter(t=>t.itemName===item.name && monthOf(t.date)===month).reduce((s,t)=>s+(t.type==="income"?-num(t.amount):num(t.amount)),0);
 }
 function carryFor(item,month){
   const prev=previousMonth(month);
@@ -79,7 +80,7 @@ function renderActual(){
   $("txEmpty").hidden=monthTx.length>0;
   monthTx.forEach(t=>{
     const tr=document.createElement("tr");
-    tr.innerHTML=`<td>${escapeHtml(t.date)}</td><td>${escapeHtml(t.itemName)}</td><td>${escapeHtml(t.description)}</td><td>${fmt(t.amount)}</td><td><button class="delete-btn" data-tx-delete="${t.id}" type="button">Hapus</button></td>`;
+    tr.innerHTML=`<td>${escapeHtml(t.date)}</td><td class="${t.type==="income"?"positive":""}">${t.type==="income"?"Pemasukan":"Pengeluaran"}</td><td>${escapeHtml(t.itemName)}</td><td>${escapeHtml(t.description)}</td><td class="${t.type==="income"?"positive":""}">${t.type==="income"?"+":"−"}${fmt(t.amount)}</td><td><button class="delete-btn" data-tx-delete="${t.id}" type="button">Hapus</button></td>`;
     txBody.appendChild(tr);
   });
 }
@@ -95,8 +96,10 @@ function localLoad(){
 }
 async function api(action,data={}){
   if(!API_URL) return null;
-  const url=new URL(API_URL);
-  if(action!=="saveAll"){url.searchParams.set("action",action);Object.entries(data).forEach(([k,v])=>url.searchParams.set(k,v));return (await fetch(url)).json();}
+  if(action==="getBudget"||action==="getTransactions"){
+    const url=new URL(API_URL);url.searchParams.set("action",action);Object.entries(data).forEach(([k,v])=>url.searchParams.set(k,v));
+    const r=await fetch(url);return r.json();
+  }
   const r=await fetch(API_URL,{method:"POST",headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify({action,...data})});
   return r.json();
 }
@@ -129,9 +132,10 @@ $("addTxBtn").addEventListener("click",async()=>{
   if(!it)return message("txMessage","Buat pos budget terlebih dahulu.","error");
   if(!date||monthOf(date)!==period())return message("txMessage","Tanggal transaksi harus berada dalam periode anggaran terpilih.","error");
   if(!description||amount<=0)return message("txMessage","Isi deskripsi dan nominal transaksi yang valid.","error");
-  const tx={id:`tx-${Date.now()}-${Math.random().toString(36).slice(2,7)}`,date,itemName:it.name,description,amount};
+  const type=$("txType").value;
+  const tx={id:`tx-${Date.now()}-${Math.random().toString(36).slice(2,7)}`,date,type,itemName:it.name,description,amount};
   transactions.push(tx);
-  try{const result=await api("saveTransaction",tx);if(result&&!result.success)throw new Error(result.message||"Gagal");localSave();message("txMessage",result?"Transaksi tersimpan ke Google Sheets.":"Transaksi tersimpan di browser. Hubungkan API_URL untuk sinkronisasi.", "success");}
+  try{const result=await api("saveTransaction",tx);if(result&&!result.success)throw new Error(result.message||"Gagal");localSave();message("txMessage",result?(type==="income"?"Pemasukan tersimpan ke Google Sheets.":"Pengeluaran tersimpan ke Google Sheets."):(type==="income"?"Pemasukan tersimpan di browser. Hubungkan API_URL untuk sinkronisasi.":"Pengeluaran tersimpan di browser. Hubungkan API_URL untuk sinkronisasi."), "success");}
   catch(e){localSave();message("txMessage",`Backend gagal: ${e.message}. Transaksi tersimpan lokal.`, "error");}
   $("txDescription").value="";$("txAmount").value="";renderActual();
 });
@@ -142,7 +146,7 @@ $("transactionsRows").addEventListener("click",async e=>{
   localSave();renderActual();message("txMessage","Transaksi dihapus.");
 });
 function makeRecommendation(){
-  const month=period(), prev=previousMonth(month), totalActual=transactions.filter(t=>monthOf(t.date)===prev).reduce((s,t)=>s+num(t.amount),0);
+  const month=period(), prev=previousMonth(month), totalActual=transactions.filter(t=>monthOf(t.date)===prev).reduce((s,t)=>s+(t.type==="income"?-num(t.amount):num(t.amount)),0);
   const carry=items.reduce((s,it)=>s+Math.max(0,num(it.amount)-actualFor(it,prev)),0);
   const main=mainBudget(), totalFunds=main+carry;
   const mandatory=items.filter(x=>x.mandatory), flexible=items.filter(x=>!x.mandatory);
@@ -193,6 +197,43 @@ document.querySelectorAll(".tab").forEach(btn=>btn.addEventListener("click",()=>
   document.querySelectorAll(".tab-panel").forEach(p=>p.hidden=p.id!==`tab-${btn.dataset.tab}`);
   if(btn.dataset.tab==="transactions")renderActual();
 }));
+function buildAiContext(){
+  const month=period();
+  const categorySummary=items.map(it=>({
+    pos:it.name,budget:round(it.amount),expense:round(transactions.filter(t=>t.itemName===it.name&&monthOf(t.date)===month&&t.type!=="income").reduce((a,t)=>a+num(t.amount),0)),
+    income:round(transactions.filter(t=>t.itemName===it.name&&monthOf(t.date)===month&&t.type==="income").reduce((a,t)=>a+num(t.amount),0)),
+    remaining:round(num(it.amount)-actualFor(it,month)),mandatory:Boolean(it.mandatory)
+  }));
+  const recent=transactions.filter(t=>monthOf(t.date)===month).sort((a,b)=>`${b.date}-${b.id}`.localeCompare(`${a.date}-${a.id}`)).slice(0,12).map(t=>({date:t.date,type:t.type==="income"?"pemasukan":"pengeluaran",pos:t.itemName,description:t.description,amount:round(t.amount)}));
+  return {period:month,mainBudget:mainBudget(),allocated:round(items.reduce((a,x)=>a+num(x.amount),0)),categories:categorySummary,recentTransactions:recent};
+}
+function renderAiAdvice(text){
+  latestAiAdvice=String(text||"").trim();const box=$("aiAdviceResult");box.hidden=!latestAiAdvice;
+  box.textContent=latestAiAdvice;$("sendAdviceBtn").disabled=!latestAiAdvice;
+}
+$("aiAdviceBtn").addEventListener("click",async()=>{
+  if(!API_URL)return message("aiAdviceMessage","Backend belum terhubung. Isi API_URL di app.js dengan URL Apps Script /exec lalu deploy ulang.","error");
+  const btn=$("aiAdviceBtn");btn.disabled=true;btn.textContent="Menganalisis…";message("aiAdviceMessage","Gemini sedang menganalisis ringkasan budget dan transaksi terbaru…");
+  try{
+    const result=await api("generateAiAdvice",{context:buildAiContext()});
+    if(!result||!result.success)throw new Error(result?.message||"Gagal menghasilkan saran AI.");
+    renderAiAdvice(result.advice);message("aiAdviceMessage","Saran berhasil dibuat. Periksa isinya sebelum mengirim ke WhatsApp.","success");
+  }catch(e){message("aiAdviceMessage",`Saran AI gagal: ${e.message}`,"error");}
+  finally{btn.disabled=false;btn.textContent="✦ Saran AI";}
+});
+$("sendAdviceBtn").addEventListener("click",async()=>{
+  const target=$("whatsappTarget").value.trim();
+  if(!latestAiAdvice)return message("aiAdviceMessage","Buat saran AI terlebih dahulu.","error");
+  if(!target)return message("aiAdviceMessage","Isi nomor WhatsApp tujuan terlebih dahulu.","error");
+  if(!API_URL)return message("aiAdviceMessage","Backend belum terhubung. Isi API_URL di app.js.","error");
+  const btn=$("sendAdviceBtn");btn.disabled=true;btn.textContent="Mengirim…";message("aiAdviceMessage","Mengirim saran melalui Fonnte…");
+  try{
+    const result=await api("sendAiAdviceWhatsapp",{target,message:latestAiAdvice,period:period()});
+    if(!result||!result.success)throw new Error(result?.message||"Pengiriman WhatsApp gagal.");
+    message("aiAdviceMessage",result.message||"Permintaan pengiriman diterima Fonnte.","success");
+  }catch(e){message("aiAdviceMessage",`Gagal mengirim WhatsApp: ${e.message}`,"error");}
+  finally{btn.disabled=false;btn.textContent="Kirim via Fonnte";}
+});
 $("txDate").value=new Date().toISOString().slice(0,10);
 localLoad();
 })();
