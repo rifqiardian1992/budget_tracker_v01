@@ -1,7 +1,7 @@
 (() => {
 "use strict";
 const $ = id => document.getElementById(id);
-const API_URL = ""; // Paste deployed Apps Script /exec URL here. Keep API keys on Apps Script only.
+const API_URL = "https://script.google.com/macros/s/AKfycbxG86upLfMmmalCrwe9J6mhvwaGjimx08tLOKkood-szmzxET13YWTR4mrbFy9qKHPx/exec"; // Paste deployed Apps Script /exec URL here. Keep API keys on Apps Script only.
 const STORAGE_KEY = "budget-tracker-v02";
 let items = [], transactions = [], nextId = 1, recommendation = null, latestAiAdvice = "";
 const fmt = n => new Intl.NumberFormat("id-ID",{style:"currency",currency:"IDR",maximumFractionDigits:0}).format(Number(n)||0);
