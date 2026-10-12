@@ -113,11 +113,12 @@ function renderActual(){
 function payload(){return {period:period(),mainBudget:mainBudget(),items:items.map(({name,mode,baseBudget,additionalBudget,amount,percent,mandatory})=>({name:name.trim(),mode,baseBudget:round(baseBudget),additionalBudget:round(additionalBudget),amount:round(amount),percent:round(percent),mandatory:Boolean(mandatory)}))};}
 function localSave(){localStorage.setItem(STORAGE_KEY,JSON.stringify({current:payload(),transactions,paydayStart:$("paydayStart").value||"",paydayNext:$("paydayNext").value||""}));}
 function localLoad(){
+  const today=localDateString();
   try{
     const saved=JSON.parse(localStorage.getItem(STORAGE_KEY)||"null");
-    if(saved){transactions=saved.transactions||[]; const cur=saved.current||{}; $("budgetDate").value=cur.period||monthNow(); $("mainBudget").value=cur.mainBudget||8000000; $("paydayStart").value=saved.paydayStart||""; $("paydayNext").value=saved.paydayNext||""; items=(cur.items||[]).map(x=>({...x,baseBudget:Number.isFinite(Number(x.baseBudget))?Number(x.baseBudget):Number(x.amount)||0,additionalBudget:Number.isFinite(Number(x.additionalBudget))?Number(x.additionalBudget):0,id:nextId++}));}
-    else {$("budgetDate").value="2026-10";$("mainBudget").value=8000000;$("paydayStart").value="2026-10-24";$("paydayNext").value="2026-11-24";items=sample();}
-  }catch(e){$("budgetDate").value="2026-10";$("mainBudget").value=8000000;$("paydayStart").value="2026-10-24";$("paydayNext").value="2026-11-24";items=sample();}
+    if(saved){transactions=saved.transactions||[]; const cur=saved.current||{}; $("budgetDate").value=cur.period||monthOf(today); $("mainBudget").value=cur.mainBudget||8000000; $("paydayStart").value=saved.paydayStart||today; $("paydayNext").value=saved.paydayNext||""; items=(cur.items||[]).map(x=>({...x,baseBudget:Number.isFinite(Number(x.baseBudget))?Number(x.baseBudget):Number(x.amount)||0,additionalBudget:Number.isFinite(Number(x.additionalBudget))?Number(x.additionalBudget):0,id:nextId++}));}
+    else {$("budgetDate").value=monthOf(today);$("mainBudget").value=8000000;$("paydayStart").value=today;$("paydayNext").value="";items=sample();}
+  }catch(e){$("budgetDate").value=monthOf(today);$("mainBudget").value=8000000;$("paydayStart").value=today;$("paydayNext").value="";items=sample();}
   recalc();renderItems();renderActual();
 }
 async function api(action,data={}){
@@ -176,8 +177,8 @@ $("budgetRows").addEventListener("change",e=>{
   if(el.dataset.field==="mandatory"){it.mandatory=el.checked;}
 });
 $("budgetRows").addEventListener("click",e=>{const id=Number(e.target.dataset.delete);if(!id)return;items=items.filter(x=>x.id!==id);renderItems();});
-$("mainBudget").addEventListener("input",()=>{recalc();renderItems();if(!recommendation)$("recommendationMainBudget").value=String(mainBudget());});
-$("recommendationMainBudget").addEventListener("input",()=>{recommendation=null;renderRecommendation();message("recommendationMessage","Main Budget periode baru berubah. Hitung kembali rekomendasi untuk menggunakan nilai terbaru.");});
+$("mainBudget").addEventListener("input",()=>{recalc();renderItems();});
+$("recommendationMainBudget").addEventListener("input",()=>{recommendation=null;renderRecommendation();message("recommendationMessage","Main Budget periode baru berubah. Jika kosong, nilai periode berjalan akan digunakan. Hitung kembali rekomendasi untuk menggunakan nilai terbaru.");});
 $("budgetDate").addEventListener("change",()=>{renderActual();recommendation=null;message("recommendationMessage","Periode berubah. Hitung kembali rekomendasi jika diperlukan.");localSave();});
 $("addRowBtn").addEventListener("click",()=>{items.push({id:nextId++,name:"",mode:"amount",baseBudget:0,additionalBudget:0,amount:0,percent:0,mandatory:false});renderItems();$("budgetRows").querySelectorAll('[data-field="name"]').item(items.length-1)?.focus();});
 $("resetBtn").addEventListener("click",()=>{if(!confirm("Pulihkan data contoh?"))return;nextId=1;$("mainBudget").value=8000000;items=sample();recalc();renderItems();message("planMessage","Data contoh dipulihkan. Simpan jika ingin menyimpan ke backend.");});
@@ -218,7 +219,9 @@ function addMonthsToDate(dateString, months=1){
 function makeRecommendation(){
   const currentPeriod=period(), range=usageRange();
   if(!range){message("recommendationMessage","Isi tanggal gajian saat ini dan tanggal gajian berikutnya terlebih dahulu agar sisa per pos dihitung sesuai siklus.","error");return;}
-  const main=mainBudget();
+  const requestedMainBudget=$("recommendationMainBudget").value.trim();
+  const main=requestedMainBudget===""?mainBudget():num(requestedMainBudget);
+  if(main<=0){message("recommendationMessage","Main Budget periode baru harus lebih besar dari nol, atau kosongkan untuk memakai Main Budget periode berjalan.","error");return;}
   const mandatory=items.filter(x=>x.mandatory), flexible=items.filter(x=>!x.mandatory);
   const mandatoryTotal=mandatory.reduce((s,x)=>s+num(x.baseBudget),0);
   const flexibleTemplate=flexible.reduce((s,x)=>s+num(x.baseBudget),0);
@@ -339,6 +342,6 @@ $("txDate").value=localDateString();
 $("paydayStart").addEventListener("change",()=>{if($("paydayStart").value){$("budgetDate").value=$("paydayStart").value.slice(0,7);}localSave();renderActual();});
 $("paydayNext").addEventListener("change",()=>{localSave();renderActual();});
 localLoad();
-$("recommendationMainBudget").value=String(mainBudget()||8000000);
+// Optional recommendation income intentionally stays blank by default; blank reuses the current Main Budget.
 checkBackendConnection();
 })();
