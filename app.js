@@ -216,7 +216,21 @@ function addMonthsToDate(dateString, months=1){
   const lastDay=new Date(first.getFullYear(),first.getMonth()+1,0).getDate();
   return `${first.getFullYear()}-${String(first.getMonth()+1).padStart(2,"0")}-${String(Math.min(d,lastDay)).padStart(2,"0")}`;
 }
+function syncPlanDatesToRecommendation(){
+  if($("recommendationPaydayStart")) $("recommendationPaydayStart").value=$("paydayStart").value||localDateString();
+  if($("recommendationPaydayNext")) $("recommendationPaydayNext").value=$("paydayNext").value||"";
+}
+function syncRecommendationDatesToPlan(){
+  const start=$("recommendationPaydayStart").value;
+  const end=$("recommendationPaydayNext").value;
+  if(!start||!end){message("recommendationMessage","Tanggal awal dan tanggal akhir siklus wajib diisi sebelum menghitung rekomendasi.","error");return false;}
+  if(start>=end){message("recommendationMessage","Tanggal akhir siklus harus lebih baru daripada tanggal awal.","error");return false;}
+  $("paydayStart").value=start; $("paydayNext").value=end; $("budgetDate").value=start.slice(0,7);
+  localSave(); renderActual();
+  return true;
+}
 function makeRecommendation(){
+  if(!syncRecommendationDatesToPlan()) return;
   const currentPeriod=period(), range=usageRange();
   if(!range){message("recommendationMessage","Isi tanggal gajian saat ini dan tanggal gajian berikutnya terlebih dahulu agar sisa per pos dihitung sesuai siklus.","error");return;}
   const requestedMainBudget=$("recommendationMainBudget").value.trim();
@@ -340,8 +354,12 @@ $("sendAdviceBtn").addEventListener("click",async()=>{
 });
 $("txDate").value=localDateString();
 $("paydayStart").addEventListener("change",()=>{if($("paydayStart").value){$("budgetDate").value=$("paydayStart").value.slice(0,7);}localSave();renderActual();});
-$("paydayNext").addEventListener("change",()=>{localSave();renderActual();});
+$("paydayNext").addEventListener("change",()=>{localSave();renderActual();syncPlanDatesToRecommendation();});
+$("paydayStart").addEventListener("change",syncPlanDatesToRecommendation);
+$("recommendationPaydayStart").addEventListener("change",()=>{ $("paydayStart").value=$("recommendationPaydayStart").value; if($("paydayStart").value) $("budgetDate").value=$("paydayStart").value.slice(0,7); localSave(); renderActual(); recommendation=null; renderRecommendation(); });
+$("recommendationPaydayNext").addEventListener("change",()=>{ $("paydayNext").value=$("recommendationPaydayNext").value; localSave(); renderActual(); recommendation=null; renderRecommendation(); });
 localLoad();
+syncPlanDatesToRecommendation();
 // Optional recommendation income intentionally stays blank by default; blank reuses the current Main Budget.
 checkBackendConnection();
 })();

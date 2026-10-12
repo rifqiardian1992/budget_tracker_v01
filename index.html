@@ -4,14 +4,14 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#101827">
-  <title>Budget Tracker v0.4.3 - Optional Main Budget & Date Defaults</title>
-  <link rel="stylesheet" href="styles.css?v=0.4.3">
+  <title>Budget Tracker v0.4.4 - Recommendation Date Inputs</title>
+  <link rel="stylesheet" href="styles.css?v=0.4.4">
 </head>
 <body>
 <div class="app-shell">
   <header class="topbar">
     <div><div class="eyebrow">PERSONAL FINANCE</div><h1>Budget Tracker</h1><p class="muted">Anggaran adaptif berdasarkan realisasi pengeluaran.</p></div>
-    <span class="version">v0.4.3 · Main Budget Opsional & Tanggal Otomatis</span>
+    <span class="version">v0.4.4 · Tanggal Siklus di Rekomendasi</span>
   </header>
 
   <nav class="tabs" aria-label="Navigasi aplikasi">
@@ -96,6 +96,14 @@
           </label>
         </div>
         <p id="recommendationBudgetHint" class="muted recommendation-budget-hint">Opsional. Jika dikosongkan, Main Budget periode baru dianggap sama dengan Main Budget periode berjalan. Nilai di Rencana Anggaran berubah setelah draft diterapkan; Google Sheets diperbarui setelah menekan Simpan anggaran.</p>
+        <div class="period-range-block recommendation-period-range">
+          <div><h3>Rentang tanggal siklus</h3><p class="muted small">Tanggal awal otomatis mengikuti tanggal hari ini jika belum tersimpan. Tanggal akhir wajib diisi dan merupakan awal siklus berikutnya.</p></div>
+          <div class="form-grid payday-form">
+            <label class="field"><span>Tanggal awal siklus</span><input id="recommendationPaydayStart" type="date" required></label>
+            <label class="field"><span>Tanggal akhir / gajian berikutnya</span><input id="recommendationPaydayNext" type="date" required></label>
+          </div>
+          <p class="muted small payday-hint">Perubahan tanggal di sini juga memperbarui tanggal pada Rencana Anggaran. Pastikan tanggal akhir lebih baru daripada tanggal awal.</p>
+        </div>
         <div id="recommendationIntro" class="recommendation-intro">Pilih periode dengan anggaran sebelumnya dan transaksi aktual, lalu hitung rekomendasi.</div>
         <div class="notice-panel" role="note"><strong>Jika gaji terlambat:</strong> jangan terapkan atau simpan anggaran siklus baru sebelum gaji benar-benar masuk. Di Rencana Anggaran, perpanjang tanggal gajian berikutnya ke tanggal penerimaan aktual/estimasi baru agar transaksi tetap masuk ke siklus berjalan. Catat transaksi seperti biasa, lalu hitung rekomendasi setelah gaji diterima.</div>
         <div class="table-wrap"><table><thead><tr><th>Pos</th><th>Jenis</th><th>Base saat ini</th><th>Aktual siklus berjalan</th><th>Additional periode baru (sisa ±)</th><th>Rekomendasi Base</th><th>Base final periode baru</th><th>Total Budget baru</th></tr></thead><tbody id="recommendationRows"></tbody></table></div>
@@ -112,7 +120,7 @@
       </ul></section>
     </section>
   </main>
-  <footer>Budget Tracker v0.4.3 · Main Budget Opsional & Tanggal Otomatis · Base + Additional Budget · Gemini + Fonnte</footer>
+  <footer>Budget Tracker v0.4.4 · Tanggal Siklus di Rekomendasi · Base + Additional Budget · Gemini + Fonnte</footer>
 </div>
 <script src="config.js?v=0.4.3"></script>
 <script src="app.js?v=0.4.3"></script>
