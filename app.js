@@ -3,7 +3,7 @@
 const $ = id => document.getElementById(id);
 const API_URL = String(window.BUDGET_TRACKER_API_URL || "").trim(); // Set in config.js; never put Gemini/Fonnte keys here.
 const STORAGE_KEY = "budget-tracker-v02";
-let items = [], transactions = [], nextId = 1, recommendation = null, latestAiAdvice = "";
+let items = [], transactions = [], nextId = 1, recommendation = null, latestAiAdvice = "", historyRows = [];
 const fmt = n => new Intl.NumberFormat("id-ID",{style:"currency",currency:"IDR",maximumFractionDigits:0}).format(Number(n)||0);
 const num = v => Math.max(0,Number(v)||0);
 const round = n => Math.round((Number(n)||0)*100)/100;
@@ -127,7 +127,7 @@ async function api(action,data={}){
   const timeout=setTimeout(()=>controller.abort(),18000);
   try {
     let response;
-    if(action==="getBudget"||action==="getTransactions"||action==="health"){
+    if(action==="getBudget"||action==="getTransactions"||action==="getHistoricalPeriods"||action==="getHistoricalTransactions"||action==="health"){
       const url=new URL(API_URL);
       url.searchParams.set("action",action);
       Object.entries(data).forEach(([k,v])=>url.searchParams.set(k,String(v)));
@@ -296,7 +296,68 @@ document.querySelectorAll(".tab").forEach(btn=>btn.addEventListener("click",()=>
   document.querySelectorAll(".tab").forEach(b=>b.classList.toggle("active",b===btn));
   document.querySelectorAll(".tab-panel").forEach(p=>p.hidden=p.id!==`tab-${btn.dataset.tab}`);
   if(btn.dataset.tab==="transactions")renderActual();
+  if(btn.dataset.tab==="history")loadHistoryPeriods();
 }));
+async function loadHistoryPeriods(){
+  const select=$("historyPeriod");
+  select.innerHTML='<option value="">Memuat periode…</option>';
+  try{
+    let periods=[];
+    const result=await api("getHistoricalPeriods");
+    if(result&&result.success&&Array.isArray(result.data)) periods=result.data;
+    else if(!API_URL) periods=[...new Set(transactions.map(t=>monthOf(t.date)).filter(x=>/^\d{4}-\d{2}$/.test(x)))].sort().reverse();
+    else throw new Error(result?.message||"Gagal memuat daftar periode dari Google Sheets.");
+    const current=period();
+    if(!periods.includes(current)&&transactions.some(t=>monthOf(t.date)===current)) periods.unshift(current);
+    select.innerHTML='';
+    if(!periods.length){select.innerHTML='<option value="">Belum ada data historis</option>';message("historyMessage","Belum ditemukan periode pada Google Sheets. Simpan transaksi/anggaran terlebih dahulu.","error");select.dataset.loaded="true";return;}
+    periods.forEach(p=>{const o=document.createElement("option");o.value=p;o.textContent=periodLabel(p);select.appendChild(o);});
+    select.value=periods.includes(current)?current:periods[0];
+    select.dataset.loaded="true";
+    message("historyMessage","Periode tersedia. Pilih periode, lalu klik Tampilkan.");
+  }catch(err){select.innerHTML='<option value="">Gagal memuat periode</option>';message("historyMessage",err.message||"Gagal memuat daftar periode.","error");}
+}
+function periodLabel(p){const [y,m]=String(p).split("-").map(Number);return new Intl.DateTimeFormat("id-ID",{month:"long",year:"numeric"}).format(new Date(y,m-1,1));}
+async function showHistory(){
+  const p=$("historyPeriod").value;
+  if(!p)return message("historyMessage","Pilih periode yang valid terlebih dahulu.","error");
+  const btn=$("showHistoryBtn");btn.disabled=true;btn.textContent="Memuat…";
+  try{
+    let rows=[];
+    if(API_URL){
+      const result=await api("getHistoricalTransactions",{period:p});
+      if(!result||!result.success)throw new Error(result?.message||"Gagal memuat transaksi historis.");
+      rows=Array.isArray(result.data)?result.data:[];
+    }else rows=transactions.filter(t=>monthOf(t.date)===p);
+    historyRows=rows.slice().sort((a,b)=>String(b.date).localeCompare(String(a.date))||String(b.id||"").localeCompare(String(a.id||"")));
+    renderHistory(p);
+    message("historyMessage",`Data periode ${periodLabel(p)} berhasil ditampilkan${API_URL?" dari Google Sheets":" dari data browser lokal"}.`,"success");
+  }catch(err){$("historyReportContent").hidden=true;$("printHistoryBtn").disabled=true;message("historyMessage",err.message||"Gagal memuat data historis.","error");}
+  finally{btn.disabled=false;btn.textContent="Tampilkan";}
+}
+function renderHistory(p){
+  const income=historyRows.filter(t=>t.type==="income").reduce((a,t)=>a+Number(t.amount||0),0);
+  const expense=historyRows.filter(t=>t.type!=="income").reduce((a,t)=>a+Number(t.amount||0),0);
+  const net=income-expense;
+  $("historyTitle").textContent=`Cashflow ${periodLabel(p)}`;
+  $("historyMeta").textContent=`Periode data: ${p} · ${historyRows.length} transaksi`;
+  $("historyGenerated").textContent=`Dicetak pada ${new Intl.DateTimeFormat("id-ID",{dateStyle:"long",timeStyle:"short"}).format(new Date())}`;
+  $("historyIncome").textContent=fmt(income);$("historyExpense").textContent=fmt(expense);$("historyNet").textContent=fmt(net);
+  $("historyNet").className=net<0?"negative":net>0?"positive":"";
+  $("historyCount").textContent=new Intl.NumberFormat("id-ID").format(historyRows.length);
+  const body=$("historyRows");body.innerHTML="";
+  historyRows.forEach(t=>{
+    const tr=document.createElement("tr");
+    const isIncome=t.type==="income";
+    tr.innerHTML=`<td>${escapeHtml(t.date||"—")}</td><td>${isIncome?'<span class="positive">Pemasukan</span>':'Pengeluaran'}</td><td>${escapeHtml(t.itemName||"—")}</td><td>${escapeHtml(t.description||"—")}</td><td class="${isIncome?"positive":""}">${isIncome?"+":"−"}${fmt(t.amount)}</td>`;
+    body.appendChild(tr);
+  });
+  $("historyEmpty").hidden=historyRows.length>0;
+  $("historyReportContent").hidden=false;$("printHistoryBtn").disabled=historyRows.length===0;
+}
+$("showHistoryBtn").addEventListener("click",showHistory);
+$("printHistoryBtn").addEventListener("click",()=>{if(!historyRows.length)return;window.print();});
+
 function localDateString(date=new Date()){
   const y=date.getFullYear(),m=String(date.getMonth()+1).padStart(2,"0"),d=String(date.getDate()).padStart(2,"0");
   return `${y}-${m}-${d}`;

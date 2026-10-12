@@ -4,20 +4,21 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#101827">
-  <title>Budget Tracker v0.4.4 - Recommendation Date Inputs</title>
-  <link rel="stylesheet" href="styles.css?v=0.4.4">
+  <title>Budget Tracker v0.5.0 - Data Historis</title>
+  <link rel="stylesheet" href="styles.css?v=0.5.0">
 </head>
 <body>
 <div class="app-shell">
   <header class="topbar">
     <div><div class="eyebrow">PERSONAL FINANCE</div><h1>Budget Tracker</h1><p class="muted">Anggaran adaptif berdasarkan realisasi pengeluaran.</p></div>
-    <span class="version">v0.4.4 · Tanggal Siklus di Rekomendasi</span>
+    <span class="version">v0.5.0 · Data Historis & PDF</span>
   </header>
 
   <nav class="tabs" aria-label="Navigasi aplikasi">
     <button class="tab active" data-tab="plan">Rencana anggaran</button>
     <button class="tab" data-tab="transactions">Transaksi aktual</button>
     <button class="tab" data-tab="recommendation">Rekomendasi</button>
+    <button class="tab" data-tab="history">Data Historis</button>
   </nav>
 
   <main>
@@ -87,6 +88,29 @@
       </section>
     </section>
 
+    <section id="tab-history" class="tab-panel" hidden>
+      <section class="panel history-panel" id="historicalReport">
+        <div class="section-heading"><div><div class="eyebrow">CASHFLOW ARCHIVE</div><h2>Data historis cashflow</h2><p class="muted">Pilih periode untuk melihat riwayat pemasukan dan pengeluaran yang tersimpan di Google Sheets.</p></div><div class="history-actions"><button id="printHistoryBtn" class="button button-secondary" type="button" disabled>Cetak / Simpan PDF</button></div></div>
+        <div class="form-grid history-filter">
+          <label class="field"><span>Periode cashflow</span><select id="historyPeriod"><option value="">Memuat periode…</option></select></label>
+          <div class="field history-filter-action"><span>&nbsp;</span><button id="showHistoryBtn" class="button button-primary" type="button">Tampilkan</button></div>
+        </div>
+        <p id="historyMessage" class="message" role="status" aria-live="polite">Pilih periode, lalu klik Tampilkan.</p>
+        <div id="historyReportContent" class="history-report-content" hidden>
+          <div class="history-report-heading"><div><div class="eyebrow">LAPORAN CASHFLOW</div><h3 id="historyTitle">Periode —</h3><p id="historyMeta" class="muted small"></p></div><div class="history-generated muted small" id="historyGenerated"></div></div>
+          <div class="history-summary-grid">
+            <div class="history-summary-item"><span>Total pemasukan</span><strong id="historyIncome">Rp0</strong></div>
+            <div class="history-summary-item"><span>Total pengeluaran</span><strong id="historyExpense">Rp0</strong></div>
+            <div class="history-summary-item"><span>Arus kas bersih</span><strong id="historyNet">Rp0</strong></div>
+            <div class="history-summary-item"><span>Jumlah transaksi</span><strong id="historyCount">0</strong></div>
+          </div>
+          <div class="table-wrap history-table-wrap"><table class="history-table"><thead><tr><th>Tanggal</th><th>Jenis</th><th>Pos budget</th><th>Deskripsi</th><th>Nominal</th></tr></thead><tbody id="historyRows"></tbody></table></div>
+          <div id="historyEmpty" class="empty-state" hidden>Tidak ada transaksi untuk periode ini.</div>
+          <p class="history-footnote">Laporan dibuat dari transaksi yang tersimpan pada sistem Budget Tracker. Pemasukan dan pengeluaran ditampilkan terpisah; arus kas bersih = total pemasukan − total pengeluaran.</p>
+        </div>
+      </section>
+    </section>
+
     <section id="tab-recommendation" class="tab-panel" hidden>
       <section class="panel">
         <div class="section-heading"><div><div class="eyebrow">ADAPTIVE PLANNING</div><h2>Rekomendasi anggaran</h2><p class="muted">Koreksi Base Budget untuk siklus gajian berikutnya. Sisa aktual tiap pos dari siklus berjalan otomatis menjadi Additional Budget, termasuk defisit negatif.</p></div><button id="generateBtn" class="button button-secondary" type="button">Hitung rekomendasi</button></div>
@@ -120,8 +144,8 @@
       </ul></section>
     </section>
   </main>
-  <footer>Budget Tracker v0.4.4 · Tanggal Siklus di Rekomendasi · Base + Additional Budget · Gemini + Fonnte</footer>
+  <footer>Budget Tracker v0.5.0 · Data Historis · Cashflow PDF · Base + Additional Budget · Gemini + Fonnte</footer>
 </div>
-<script src="config.js?v=0.4.3"></script>
-<script src="app.js?v=0.4.3"></script>
+<script src="config.js?v=0.5.0"></script>
+<script src="app.js?v=0.5.0"></script>
 </body></html>
