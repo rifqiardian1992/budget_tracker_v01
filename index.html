@@ -4,14 +4,14 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#101827">
-  <title>Budget Tracker v0.3 - AI Advice</title>
+  <title>Budget Tracker v0.3.3 - Payday Range</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
 <div class="app-shell">
   <header class="topbar">
     <div><div class="eyebrow">PERSONAL FINANCE</div><h1>Budget Tracker</h1><p class="muted">Anggaran adaptif berdasarkan realisasi pengeluaran.</p></div>
-    <span class="version">v0.3 AI</span>
+    <span class="version">v0.3.3 AI</span>
   </header>
 
   <nav class="tabs" aria-label="Navigasi aplikasi">
@@ -27,6 +27,14 @@
         <div class="form-grid">
           <label class="field"><span>Periode anggaran</span><input id="budgetDate" type="month"></label>
           <label class="field"><span>Main Budget / Penghasilan (Rp)</span><input id="mainBudget" type="number" min="0" step="1000" placeholder="8000000"></label>
+        </div>
+        <div class="period-range-block">
+          <div><h3>Periode penggunaan anggaran</h3><p class="muted small">Atur siklus dari tanggal gajian saat ini sampai tanggal gajian berikutnya.</p></div>
+          <div class="form-grid payday-form">
+            <label class="field"><span>Tanggal gajian saat ini (awal periode)</span><input id="paydayStart" type="date" required></label>
+            <label class="field"><span>Tanggal gajian berikutnya (akhir siklus)</span><input id="paydayNext" type="date" required></label>
+          </div>
+          <p class="muted small payday-hint">Tanggal awal dihitung termasuk dalam periode, sedangkan tanggal gajian berikutnya memulai siklus baru dan tidak dihitung dalam periode sebelumnya.</p>
         </div>
         <div class="budget-summary">
           <div><span class="muted small">Main Budget</span><strong id="mainBudgetDisplay">Rp0</strong></div>
@@ -92,7 +100,7 @@
       </ul></section>
     </section>
   </main>
-  <footer>Budget Tracker v0.3 · GitHub Pages + Apps Script + Sheets + Gemini + Fonnte</footer>
+  <footer>Budget Tracker v0.3.3 · GitHub Pages + Apps Script + Sheets + Gemini + Fonnte</footer>
 </div>
 <script src="app.js"></script>
 </body></html>
