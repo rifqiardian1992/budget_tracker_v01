@@ -4,14 +4,14 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#101827">
-  <title>Budget Tracker v0.3.7 - Base + Additional Budget</title>
+  <title>Budget Tracker v0.3.9 - Siklus Anggaran Berikutnya</title>
   <link rel="stylesheet" href="styles.css?v=0.3.8">
 </head>
 <body>
 <div class="app-shell">
   <header class="topbar">
     <div><div class="eyebrow">PERSONAL FINANCE</div><h1>Budget Tracker</h1><p class="muted">Anggaran adaptif berdasarkan realisasi pengeluaran.</p></div>
-    <span class="version">v0.3.8 · Total Sisa Anggaran</span>
+    <span class="version">v0.3.9 · Carryover per Pos</span>
   </header>
 
   <nav class="tabs" aria-label="Navigasi aplikasi">
@@ -89,23 +89,23 @@
 
     <section id="tab-recommendation" class="tab-panel" hidden>
       <section class="panel">
-        <div class="section-heading"><div><div class="eyebrow">ADAPTIVE PLANNING</div><h2>Rekomendasi anggaran</h2><p class="muted">Pos wajib dipertahankan. Sisa dana periode sebelumnya dibagi ke pos fleksibel berdasarkan bobot template awal.</p></div><button id="generateBtn" class="button button-secondary" type="button">Hitung rekomendasi</button></div>
+        <div class="section-heading"><div><div class="eyebrow">ADAPTIVE PLANNING</div><h2>Rekomendasi anggaran</h2><p class="muted">Koreksi Base Budget untuk siklus gajian berikutnya. Sisa aktual tiap pos dari siklus berjalan otomatis menjadi Additional Budget, termasuk defisit negatif.</p></div><button id="generateBtn" class="button button-secondary" type="button">Hitung rekomendasi</button></div>
         <div id="recommendationIntro" class="recommendation-intro">Pilih periode dengan anggaran sebelumnya dan transaksi aktual, lalu hitung rekomendasi.</div>
-        <div class="table-wrap"><table><thead><tr><th>Pos</th><th>Jenis</th><th>Template</th><th>Aktual periode lalu</th><th>Rekomendasi</th><th>Nominal final</th></tr></thead><tbody id="recommendationRows"></tbody></table></div>
-        <div class="actions"><button id="discardRecommendationBtn" class="button button-ghost" type="button">Buang draft</button><button id="applyRecommendationBtn" class="button button-primary" type="button">Terapkan sebagai draft</button><button id="saveRecommendationBtn" class="button button-primary" type="button">Simpan anggaran periode ini</button></div>
+        <div class="table-wrap"><table><thead><tr><th>Pos</th><th>Jenis</th><th>Base saat ini</th><th>Aktual siklus berjalan</th><th>Additional periode baru (sisa ±)</th><th>Rekomendasi Base</th><th>Base final periode baru</th><th>Total Budget baru</th></tr></thead><tbody id="recommendationRows"></tbody></table></div>
+        <div class="actions"><button id="discardRecommendationBtn" class="button button-ghost" type="button">Buang draft</button><button id="applyRecommendationBtn" class="button button-primary" type="button">Terapkan sebagai draft</button><button id="saveRecommendationBtn" class="button button-primary" type="button">Simpan untuk periode berikutnya</button></div>
         <p id="recommendationMessage" class="message" role="status" aria-live="polite"></p>
       </section>
-      <section class="panel note-panel"><h3>Metode rekomendasi v0.2</h3><ul>
-        <li>Sisa per pos = anggaran periode sebelumnya − transaksi aktual pada pos itu.</li>
-        <li>Hanya sisa positif yang dibawa sebagai surplus; overspending tidak menciptakan saldo negatif yang otomatis ditagihkan ke bulan berikutnya.</li>
-        <li>Pos wajib dipertahankan pada nominal template, maksimal sesuai dana yang tersedia; bila dana tidak cukup, aplikasi menandai kekurangan.</li>
-        <li>Surplus dibagikan ke pos fleksibel berdasarkan proporsi nominal template mereka. Pengguna tetap dapat mengedit draft sebelum menyimpan.</li>
-        <li>v0.2 menggunakan template periode sebelumnya sebagai acuan; transaksi harus dicatat untuk memperoleh rekomendasi yang akurat.</li>
+      <section class="panel note-panel"><h3>Aturan carryover</h3><ul>
+        <li>Base Budget rekomendasi adalah alokasi dasar baru dari Main Budget periode berikutnya.</li>
+        <li>Additional Budget periode baru = Total Budget pos saat ini − pengeluaran bersih pada siklus gajian berjalan.</li>
+        <li>Surplus menjadi nilai positif; defisit tetap negatif dan mengurangi Total Budget periode baru.</li>
+        <li>Tombol simpan membuat anggaran pada periode kalender tanggal gajian berikutnya, mengisi tanggal awal siklus baru, dan tidak mengubah anggaran periode berjalan.</li>
+        <li>Periksa tanggal gajian serta kolom Base, Additional, dan Total sebelum mencatat transaksi periode baru.</li>
       </ul></section>
     </section>
   </main>
-  <footer>Budget Tracker v0.3.7 · Base + Additional Budget · Payday Cycle · Gemini + Fonnte</footer>
+  <footer>Budget Tracker v0.3.9 · Base + Additional Budget · Payday Cycle · Gemini + Fonnte</footer>
 </div>
-<script src="config.js?v=0.3.7"></script>
-<script src="app.js?v=0.3.7"></script>
+<script src="config.js?v=0.3.9"></script>
+<script src="app.js?v=0.3.9"></script>
 </body></html>
