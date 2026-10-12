@@ -1,7 +1,7 @@
 (() => {
 "use strict";
 const $ = id => document.getElementById(id);
-const API_URL = "https://script.google.com/macros/s/AKfycbxG86upLfMmmalCrwe9J6mhvwaGjimx08tLOKkood-szmzxET13YWTR4mrbFy9qKHPx/exec"; // Paste deployed Apps Script /exec URL here. Keep API keys on Apps Script only.
+const API_URL = ""; // Paste deployed Apps Script /exec URL here. Keep API keys on Apps Script only.
 const STORAGE_KEY = "budget-tracker-v02";
 let items = [], transactions = [], nextId = 1, recommendation = null, latestAiAdvice = "";
 const fmt = n => new Intl.NumberFormat("id-ID",{style:"currency",currency:"IDR",maximumFractionDigits:0}).format(Number(n)||0);
@@ -67,16 +67,27 @@ function carryFor(item,month){
   return priorItem ? Math.max(0,num(priorItem.amount)-actualFor(priorItem,prev)) : 0;
 }
 function previousMonth(m){const [y,mo]=m.split("-").map(Number);const d=new Date(y,mo-2,1);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;}
+function usageRange(){
+  const start=$("paydayStart").value, next=$("paydayNext").value;
+  return start && next && start < next ? {start,next} : null;
+}
+function isDateInUsagePeriod(date){
+  const range=usageRange();
+  return range ? String(date||"") >= range.start && String(date||"") < range.next : monthOf(date) === period();
+}
+function actualForUsagePeriod(item){
+  return transactions.filter(t=>t.itemName===item.name && isDateInUsagePeriod(t.date)).reduce((s,t)=>s+(t.type==="income"?-num(t.amount):num(t.amount)),0);
+}
 function renderActual(){
   const month=period(), body=$("actualRows"), txBody=$("transactionsRows");
   body.innerHTML=""; txBody.innerHTML="";
   items.forEach(it=>{
-    const actual=actualFor(it,month), left=num(it.amount)-actual;
+    const actual=actualForUsagePeriod(it), left=num(it.amount)-actual;
     const tr=document.createElement("tr");
     tr.innerHTML=`<td>${escapeHtml(it.name)}</td><td>${fmt(it.amount)}</td><td>${fmt(actual)}</td><td class="${left<0?"negative":"positive"}">${fmt(left)}</td><td></td>`;
     body.appendChild(tr);
   });
-  const monthTx=transactions.filter(t=>monthOf(t.date)===month).sort((a,b)=>b.date.localeCompare(a.date));
+  const monthTx=transactions.filter(t=>isDateInUsagePeriod(t.date)).sort((a,b)=>b.date.localeCompare(a.date));
   $("txEmpty").hidden=monthTx.length>0;
   monthTx.forEach(t=>{
     const tr=document.createElement("tr");
@@ -130,7 +141,7 @@ $("saveBtn").addEventListener("click",async()=>{
 $("addTxBtn").addEventListener("click",async()=>{
   const id=Number($("txCategory").value),it=items.find(x=>x.id===id),date=$("txDate").value,description=$("txDescription").value.trim(),amount=num($("txAmount").value);
   if(!it)return message("txMessage","Buat pos budget terlebih dahulu.","error");
-  if(!date||monthOf(date)!==period())return message("txMessage","Tanggal transaksi harus berada dalam periode anggaran terpilih.","error");
+  if(!date||!isDateInUsagePeriod(date))return message("txMessage",usageRange()?`Tanggal transaksi harus berada dalam siklus gajian ${usageRange().start} sampai sebelum ${usageRange().next}.`:"Tanggal transaksi harus berada dalam periode anggaran terpilih.","error");
   if(!description||amount<=0)return message("txMessage","Isi deskripsi dan nominal transaksi yang valid.","error");
   const type=$("txType").value;
   const tx={id:`tx-${Date.now()}-${Math.random().toString(36).slice(2,7)}`,date,type,itemName:it.name,description,amount};
@@ -252,7 +263,7 @@ $("sendAdviceBtn").addEventListener("click",async()=>{
   finally{btn.disabled=false;btn.textContent="Kirim via Fonnte";}
 });
 $("txDate").value=localDateString();
-$("paydayStart").addEventListener("change",localSave);
-$("paydayNext").addEventListener("change",localSave);
+$("paydayStart").addEventListener("change",()=>{localSave();renderActual();});
+$("paydayNext").addEventListener("change",()=>{localSave();renderActual();});
 localLoad();
-})();
+})();%                                                                                                                                                                               
