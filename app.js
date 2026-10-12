@@ -331,7 +331,7 @@ async function showHistory(){
     }else rows=transactions.filter(t=>monthOf(t.date)===p);
     historyRows=rows.slice().sort((a,b)=>String(b.date).localeCompare(String(a.date))||String(b.id||"").localeCompare(String(a.id||"")));
     renderHistory(p);
-    message("historyMessage",`Data periode ${periodLabel(p)} berhasil ditampilkan${API_URL?" dari Google Sheets":" dari data browser lokal"}.`,"success");
+    message("historyMessage",historyRows.length ? `Data periode ${periodLabel(p)} berhasil ditampilkan${API_URL?" dari Google Sheets":" dari data browser lokal"} (${historyRows.length} transaksi).` : `Tidak ada transaksi dengan tanggal pada ${periodLabel(p)}. Riwayat kini difilter berdasarkan tanggal transaksi, bukan periode anggaran.`, historyRows.length ? "success" : "error");
   }catch(err){$("historyReportContent").hidden=true;$("printHistoryBtn").disabled=true;message("historyMessage",err.message||"Gagal memuat data historis.","error");}
   finally{btn.disabled=false;btn.textContent="Tampilkan";}
 }
