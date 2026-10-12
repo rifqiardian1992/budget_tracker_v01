@@ -79,7 +79,10 @@ function usageRange(){
 }
 function isDateInUsagePeriod(date){
   const range=usageRange();
-  return range ? String(date||"") >= range.start && String(date||"") < range.next : monthOf(date) === period();
+  // The next payday is a planned date, not a hard cutoff. If salary is late,
+  // keep recording transactions from the active cycle start until the user
+  // explicitly starts a new cycle by updating paydayStart.
+  return range ? String(date||"") >= range.start : monthOf(date) === period();
 }
 function actualForUsagePeriod(item){
   return transactions.filter(t=>t.itemName===item.name && isDateInUsagePeriod(t.date)).reduce((s,t)=>s+(t.type==="income"?-num(t.amount):num(t.amount)),0);
@@ -173,12 +176,13 @@ $("budgetRows").addEventListener("change",e=>{
   if(el.dataset.field==="mandatory"){it.mandatory=el.checked;}
 });
 $("budgetRows").addEventListener("click",e=>{const id=Number(e.target.dataset.delete);if(!id)return;items=items.filter(x=>x.id!==id);renderItems();});
-$("mainBudget").addEventListener("input",()=>{recalc();renderItems();});
-$("budgetDate").addEventListener("change",()=>{renderActual();recommendation=null;message("recommendationMessage","Periode berubah. Hitung kembali rekomendasi jika diperlukan.");});
+$("mainBudget").addEventListener("input",()=>{recalc();renderItems();if(!recommendation)$("recommendationMainBudget").value=String(mainBudget());});
+$("recommendationMainBudget").addEventListener("input",()=>{recommendation=null;renderRecommendation();message("recommendationMessage","Main Budget periode baru berubah. Hitung kembali rekomendasi untuk menggunakan nilai terbaru.");});
+$("budgetDate").addEventListener("change",()=>{renderActual();recommendation=null;message("recommendationMessage","Periode berubah. Hitung kembali rekomendasi jika diperlukan.");localSave();});
 $("addRowBtn").addEventListener("click",()=>{items.push({id:nextId++,name:"",mode:"amount",baseBudget:0,additionalBudget:0,amount:0,percent:0,mandatory:false});renderItems();$("budgetRows").querySelectorAll('[data-field="name"]').item(items.length-1)?.focus();});
 $("resetBtn").addEventListener("click",()=>{if(!confirm("Pulihkan data contoh?"))return;nextId=1;$("mainBudget").value=8000000;items=sample();recalc();renderItems();message("planMessage","Data contoh dipulihkan. Simpan jika ingin menyimpan ke backend.");});
 $("saveBtn").addEventListener("click",async()=>{
-  const data=payload();if(!data.period||!data.mainBudget)return message("planMessage","Pilih periode dan isi Main Budget lebih besar dari nol.","error");if(data.items.some(x=>!x.name))return message("planMessage","Semua pos harus memiliki nama.","error");
+  const data=payload();if(!data.period||!data.mainBudget)return message("planMessage","Pilih periode dan isi Main Budget lebih besar dari nol.","error");if(data.items.some(x=>!x.name))return message("planMessage","Semua pos harus memiliki nama.","error");const range=usageRange();if(!range)return message("planMessage","Tanggal gajian awal dan berikutnya wajib diisi, dan tanggal berikutnya harus setelah tanggal awal.","error");if(data.period!==range.start.slice(0,7))return message("planMessage","Periode anggaran harus sesuai bulan tanggal gajian awal.","error");
   const btn=$("saveBtn"), original=btn.textContent;btn.disabled=true;btn.textContent="Menyimpan…";
   try{const result=await api("saveAll",{...data,transactions});if(result&&!result.success)throw new Error(result.message||"Gagal menyimpan");localSave();message("planMessage",result?"Anggaran dan transaksi tersimpan ke Google Sheets.":"Tersimpan di browser saja. Atur URL Apps Script di frontend/config.js untuk sinkronisasi Google Sheets.", "success");}
   catch(e){localSave();message("planMessage",`Sinkronisasi gagal: ${e.message}. Salinan lokal tetap disimpan di browser; periksa status backend di atas.`, "error");}
@@ -187,13 +191,13 @@ $("saveBtn").addEventListener("click",async()=>{
 $("addTxBtn").addEventListener("click",async()=>{
   const id=Number($("txCategory").value),it=items.find(x=>x.id===id),date=$("txDate").value,description=$("txDescription").value.trim(),amount=num($("txAmount").value);
   if(!it)return message("txMessage","Buat pos budget terlebih dahulu.","error");
-  if(!date||!isDateInUsagePeriod(date))return message("txMessage",usageRange()?`Tanggal transaksi harus berada dalam siklus gajian ${usageRange().start} sampai sebelum ${usageRange().next}.`:"Tanggal transaksi harus berada dalam periode anggaran terpilih.","error");
+  if(!date||!isDateInUsagePeriod(date))return message("txMessage",usageRange()?`Tanggal transaksi harus sama dengan atau setelah awal siklus berjalan (${usageRange().start}).` : "Tanggal transaksi harus berada dalam periode anggaran terpilih.","error");
   if(!description||amount<=0)return message("txMessage","Isi deskripsi dan nominal transaksi yang valid.","error");
   const type=$("txType").value;
   const tx={id:`tx-${Date.now()}-${Math.random().toString(36).slice(2,7)}`,date,type,itemName:it.name,description,amount};
   const btn=$("addTxBtn"), original=btn.textContent;btn.disabled=true;btn.textContent="Menyimpan…";
   transactions.push(tx);
-  try{const result=await api("saveTransaction",tx);if(result&&!result.success)throw new Error(result.message||"Gagal");localSave();message("txMessage",result?(type==="income"?"Pemasukan tersimpan ke Google Sheets.":"Pengeluaran tersimpan ke Google Sheets."):(type==="income"?"Pemasukan tersimpan di browser saja. Atur frontend/config.js untuk sinkronisasi.":"Pengeluaran tersimpan di browser saja. Atur frontend/config.js untuk sinkronisasi."), "success");}
+  try{const result=await api("saveTransaction",tx);if(result&&!result.success)throw new Error(result.message||"Gagal");localSave();const late=usageRange()&&date>=usageRange().next;const status=result?(type==="income"?"Pemasukan tersimpan ke Google Sheets.":"Pengeluaran tersimpan ke Google Sheets."):(type==="income"?"Pemasukan tersimpan di browser saja. Atur frontend/config.js untuk sinkronisasi.":"Pengeluaran tersimpan di browser saja. Atur frontend/config.js untuk sinkronisasi.");message("txMessage",late?`${status} Tanggal transaksi melewati tanggal gajian yang direncanakan; transaksi tetap dihitung dalam siklus berjalan sampai Anda memulai siklus baru setelah gaji benar-benar masuk.`:status,"success");}
   catch(e){localSave();message("txMessage",`Sinkronisasi gagal: ${e.message}. Transaksi tetap disimpan lokal di browser.`, "error");}
   finally{btn.disabled=false;btn.textContent=original;}
   $("txDescription").value="";$("txAmount").value="";renderActual();
@@ -259,32 +263,17 @@ function buildNextPeriodBudget(){
 $("applyRecommendationBtn").addEventListener("click",()=>{
   if(!recommendation)return message("recommendationMessage","Hitung rekomendasi terlebih dahulu.","error");
   const next=buildNextPeriodBudget();
-  $("budgetDate").value=next.period;$("mainBudget").value=next.mainBudget;
-  $("paydayStart").value=recommendation.rangeNext;$("paydayNext").value=recommendation.nextPayday;
-  items=next.items.map(x=>({...x,id:nextId++}));recalc();renderItems();localSave();
-  message("recommendationMessage",`Draft periode ${next.period} sudah diterapkan ke tab Rencana anggaran. Base Budget berisi alokasi rekomendasi; Additional Budget berisi sisa/defisit tiap pos dari siklus sebelumnya. Klik Simpan anggaran untuk menyimpan.`,"success");
+  if(next.items.some(x=>!x.name))return message("recommendationMessage","Semua pos harus memiliki nama sebelum draft diterapkan.","error");
+  // Apply recommendation to the plan editor only. Persisting to Sheets requires the user to press Save Budget there.
+  $("budgetDate").value=recommendation.rangeNext.slice(0,7);
+  $("mainBudget").value=next.mainBudget;
+  $("paydayStart").value=recommendation.rangeNext;
+  $("paydayNext").value=recommendation.nextPayday;
+  items=next.items.map(x=>({...x,id:nextId++}));
+  recalc();renderItems();renderActual();localSave();
+  message("recommendationMessage",`Draft periode ${period()} diterapkan ke Rencana Anggaran, belum disimpan ke Google Sheets. Periksa/ubah kedua tanggal gajian dan Base/Additional Budget, lalu klik Simpan anggaran.`,"success");
   document.querySelector('[data-tab="plan"]').click();
-});
-$("saveRecommendationBtn").addEventListener("click",async()=>{
-  if(!recommendation)return message("recommendationMessage","Hitung rekomendasi terlebih dahulu.","error");
-  let next;
-  try{next=buildNextPeriodBudget();}catch(e){return message("recommendationMessage",e.message,"error");}
-  if(next.items.some(x=>!x.name))return message("recommendationMessage","Semua pos harus memiliki nama.","error");
-  if(!confirm(`Simpan anggaran periode baru ${next.period}? Base Budget akan memakai alokasi rekomendasi dan Additional Budget akan memakai sisa aktual tiap pos, termasuk nilai negatif. Anggaran periode berjalan tidak diubah.`))return;
-  const btn=$("saveRecommendationBtn"), original=btn.textContent;btn.disabled=true;btn.textContent="Menyimpan…";
-  const oldPeriod=period(), oldItems=items, oldMain=$("mainBudget").value, oldStart=$("paydayStart").value, oldNext=$("paydayNext").value;
-  try{
-    const body={period:next.period,mainBudget:next.mainBudget,items:next.items.map(({name,mode,baseBudget,additionalBudget,amount,percent,mandatory})=>({name,mode,baseBudget,additionalBudget,amount,percent,mandatory})),transactions};
-    const result=await api("saveAll",body);if(result&&!result.success)throw new Error(result.message||"Gagal menyimpan");
-    $("budgetDate").value=next.period;$("mainBudget").value=next.mainBudget;
-    $("paydayStart").value=recommendation.rangeNext;$("paydayNext").value=recommendation.nextPayday;
-    items=next.items.map(x=>({...x,id:nextId++}));recalc();renderItems();renderActual();localSave();
-    message("recommendationMessage",result?`Anggaran periode ${next.period} berhasil disimpan ke Google Sheets dan otomatis dimuat pada tab Rencana anggaran.`:`Anggaran periode ${next.period} disimpan di browser saja. Backend belum diatur; data belum tersinkron ke Google Sheets.`,result?"success":"error");
-    document.querySelector('[data-tab="plan"]').click();message("planMessage",`Anggaran periode baru ${next.period} siap. Periksa Base Budget, Additional Budget, dan tanggal siklus gajian.`,"success");
-  }catch(e){
-    $("budgetDate").value=oldPeriod;items=oldItems;$("mainBudget").value=oldMain;$("paydayStart").value=oldStart;$("paydayNext").value=oldNext;recalc();renderItems();
-    message("recommendationMessage",`Gagal menyimpan anggaran periode baru: ${e.message}. Anggaran di layar dikembalikan ke periode sebelumnya; coba lagi setelah memeriksa koneksi.`,"error");
-  }finally{btn.disabled=false;btn.textContent=original;}
+  message("planMessage","Draft rekomendasi sudah dimuat. Periksa periode dan tanggal gajian; klik Simpan anggaran untuk menyimpan ke Google Sheets.","success");
 });
 document.querySelectorAll(".tab").forEach(btn=>btn.addEventListener("click",()=>{
   document.querySelectorAll(".tab").forEach(b=>b.classList.toggle("active",b===btn));
@@ -347,8 +336,9 @@ $("sendAdviceBtn").addEventListener("click",async()=>{
   finally{btn.disabled=false;btn.textContent="Kirim via Fonnte";}
 });
 $("txDate").value=localDateString();
-$("paydayStart").addEventListener("change",()=>{localSave();renderActual();});
+$("paydayStart").addEventListener("change",()=>{if($("paydayStart").value){$("budgetDate").value=$("paydayStart").value.slice(0,7);}localSave();renderActual();});
 $("paydayNext").addEventListener("change",()=>{localSave();renderActual();});
 localLoad();
+$("recommendationMainBudget").value=String(mainBudget()||8000000);
 checkBackendConnection();
 })();

@@ -11,3 +11,6 @@ footer{text-align:center;color:#98a1b2;font-size:11px;padding:24px 0 0}[hidden]{
 .period-range-block{margin-top:18px;padding:16px;border:1px solid var(--border);border-radius:14px;background:var(--surface-soft,rgba(100,116,139,.045))}.period-range-block h3{margin:0 0 4px;font-size:1rem}.period-range-block .payday-form{margin-top:12px}.period-range-block .payday-hint{margin-bottom:0}
 
 .total-budget-cell{font-weight:700;white-space:nowrap}.table-wrap table{min-width:1040px}
+
+.recommendation-budget-input { margin-top: 1rem; max-width: 520px; }
+.notice-panel { margin-top: 1rem; padding: 1rem 1.1rem; border: 1px solid #f1d49a; border-radius: 12px; background: #fff9e9; color: #674b10; line-height: 1.6; }
