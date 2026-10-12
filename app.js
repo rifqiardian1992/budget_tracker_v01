@@ -4,6 +4,9 @@ const $ = id => document.getElementById(id);
 const API_URL = String(window.BUDGET_TRACKER_API_URL || "").trim(); // Set in config.js; never put Gemini/Fonnte keys here.
 const STORAGE_KEY = "budget-tracker-v02";
 let items = [], transactions = [], nextId = 1, recommendation = null, latestAiAdvice = "", historyRows = [];
+// Active transaction cycle is the last committed plan cycle. Editors in other tabs remain drafts until an explicit action.
+let activePaydayStart = "", activePaydayNext = "";
+let recommendationApplied = false, committedLockEnd = "";
 const fmt = n => new Intl.NumberFormat("id-ID",{style:"currency",currency:"IDR",maximumFractionDigits:0}).format(Number(n)||0);
 const num = v => Math.max(0,Number(v)||0);
 const round = n => Math.round((Number(n)||0)*100)/100;
@@ -74,7 +77,11 @@ function carryFor(item,month){
 }
 function previousMonth(m){const [y,mo]=m.split("-").map(Number);const d=new Date(y,mo-2,1);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;}
 function usageRange(){
-  const start=$("paydayStart").value, next=$("paydayNext").value;
+  const start=activePaydayStart, next=activePaydayNext;
+  return start && next && start < next ? {start,next} : null;
+}
+function rangeFromRecommendationInputs(){
+  const start=$("recommendationPaydayStart").value, next=$("recommendationPaydayNext").value;
   return start && next && start < next ? {start,next} : null;
 }
 function isDateInUsagePeriod(date){
@@ -111,14 +118,14 @@ function renderActual(){
   });
 }
 function payload(){return {period:period(),mainBudget:mainBudget(),items:items.map(({name,mode,baseBudget,additionalBudget,amount,percent,mandatory})=>({name:name.trim(),mode,baseBudget:round(baseBudget),additionalBudget:round(additionalBudget),amount:round(amount),percent:round(percent),mandatory:Boolean(mandatory)}))};}
-function localSave(){localStorage.setItem(STORAGE_KEY,JSON.stringify({current:payload(),transactions,paydayStart:$("paydayStart").value||"",paydayNext:$("paydayNext").value||""}));}
+function localSave(){localStorage.setItem(STORAGE_KEY,JSON.stringify({current:payload(),transactions,paydayStart:$("paydayStart").value||"",paydayNext:$("paydayNext").value||"",activePaydayStart,activePaydayNext,recommendationApplied,committedLockEnd}));}
 function localLoad(){
   const today=localDateString();
   try{
     const saved=JSON.parse(localStorage.getItem(STORAGE_KEY)||"null");
-    if(saved){transactions=saved.transactions||[]; const cur=saved.current||{}; $("budgetDate").value=cur.period||monthOf(today); $("mainBudget").value=cur.mainBudget||8000000; $("paydayStart").value=saved.paydayStart||today; $("paydayNext").value=saved.paydayNext||""; items=(cur.items||[]).map(x=>({...x,baseBudget:Number.isFinite(Number(x.baseBudget))?Number(x.baseBudget):Number(x.amount)||0,additionalBudget:Number.isFinite(Number(x.additionalBudget))?Number(x.additionalBudget):0,id:nextId++}));}
-    else {$("budgetDate").value=monthOf(today);$("mainBudget").value=8000000;$("paydayStart").value=today;$("paydayNext").value="";items=sample();}
-  }catch(e){$("budgetDate").value=monthOf(today);$("mainBudget").value=8000000;$("paydayStart").value=today;$("paydayNext").value="";items=sample();}
+    if(saved){transactions=saved.transactions||[]; const cur=saved.current||{}; $("budgetDate").value=cur.period||monthOf(today); $("mainBudget").value=cur.mainBudget||8000000; $("paydayStart").value=saved.paydayStart||today; $("paydayNext").value=saved.paydayNext||""; activePaydayStart=saved.activePaydayStart||saved.paydayStart||today; activePaydayNext=saved.activePaydayNext||saved.paydayNext||""; recommendationApplied=Boolean(saved.recommendationApplied); committedLockEnd=saved.committedLockEnd||""; items=(cur.items||[]).map(x=>({...x,baseBudget:Number.isFinite(Number(x.baseBudget))?Number(x.baseBudget):Number(x.amount)||0,additionalBudget:Number.isFinite(Number(x.additionalBudget))?Number(x.additionalBudget):0,id:nextId++}));}
+    else {$("budgetDate").value=monthOf(today);$("mainBudget").value=8000000;$("paydayStart").value=today;$("paydayNext").value="";activePaydayStart=today;activePaydayNext="";items=sample();}
+  }catch(e){$("budgetDate").value=monthOf(today);$("mainBudget").value=8000000;$("paydayStart").value=today;$("paydayNext").value="";activePaydayStart=today;activePaydayNext="";items=sample();}
   recalc();renderItems();renderActual();
 }
 async function api(action,data={}){
@@ -204,13 +211,24 @@ $("budgetRows").addEventListener("change",e=>{
 $("budgetRows").addEventListener("click",e=>{const id=Number(e.target.dataset.delete);if(!id)return;items=items.filter(x=>x.id!==id);renderItems();});
 $("mainBudget").addEventListener("input",()=>{recalc();renderItems();});
 $("recommendationMainBudget").addEventListener("input",()=>{recommendation=null;renderRecommendation();message("recommendationMessage","Main Budget periode baru berubah. Jika kosong, nilai periode berjalan akan digunakan. Hitung kembali rekomendasi untuk menggunakan nilai terbaru.");});
-$("budgetDate").addEventListener("change",()=>{renderActual();recommendation=null;message("recommendationMessage","Periode berubah. Hitung kembali rekomendasi jika diperlukan.");localSave();});
+$("budgetDate").addEventListener("change",()=>{recommendation=null;message("recommendationMessage","Periode rencana berubah sebagai draft. Data transaksi aktual tidak berubah sampai anggaran disimpan.");localSave();});
 $("addRowBtn").addEventListener("click",()=>{items.push({id:nextId++,name:"",mode:"amount",baseBudget:0,additionalBudget:0,amount:0,percent:0,mandatory:false});renderItems();$("budgetRows").querySelectorAll('[data-field="name"]').item(items.length-1)?.focus();});
+function addDays(date,days){const d=new Date(`${date}T12:00:00`);d.setDate(d.getDate()+days);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;}
+function lockIsActive(endDate){return Boolean(endDate)&&localDateString()<addDays(endDate,-1);}
+function refreshTabLocks(){
+  const planLocked=lockIsActive(committedLockEnd);
+  const recommendationLocked=planLocked|| (recommendationApplied&&lockIsActive($("paydayNext").value||committedLockEnd));
+  const planBtn=document.querySelector('[data-tab="plan"]'), recBtn=document.querySelector('[data-tab="recommendation"]');
+  planBtn.disabled=planLocked; planBtn.classList.toggle("tab-locked",planLocked); planBtn.title=planLocked?`Tersedia kembali pada ${addDays(committedLockEnd,-1)}`:"";
+  recBtn.disabled=recommendationLocked; recBtn.classList.toggle("tab-locked",recommendationLocked); recBtn.title=recommendationLocked?`Rekomendasi dikunci sampai ${addDays(committedLockEnd||$("paydayNext").value,-1)}`:"";
+  if(planLocked&&document.querySelector('[data-tab="plan"]').classList.contains("active")) document.querySelector('[data-tab="transactions"]').click();
+  if(recommendationLocked&&document.querySelector('[data-tab="recommendation"]').classList.contains("active")) document.querySelector('[data-tab="transactions"]').click();
+}
 $("resetBtn").addEventListener("click",()=>{if(!confirm("Pulihkan data contoh?"))return;nextId=1;$("mainBudget").value=8000000;items=sample();recalc();renderItems();message("planMessage","Data contoh dipulihkan. Simpan jika ingin menyimpan ke backend.");});
 $("saveBtn").addEventListener("click",async()=>{
   const data=payload();if(!data.period||!data.mainBudget)return message("planMessage","Pilih periode dan isi Main Budget lebih besar dari nol.","error");if(data.items.some(x=>!x.name))return message("planMessage","Semua pos harus memiliki nama.","error");const range=usageRange();if(!range)return message("planMessage","Tanggal gajian awal dan berikutnya wajib diisi, dan tanggal berikutnya harus setelah tanggal awal.","error");if(data.period!==range.start.slice(0,7))return message("planMessage","Periode anggaran harus sesuai bulan tanggal gajian awal.","error");
   const btn=$("saveBtn"), original=btn.textContent;btn.disabled=true;btn.textContent="Menyimpan…";
-  try{const result=await api("saveAll",{...data,paydayStart:$("paydayStart").value,paydayNext:$("paydayNext").value,transactions});if(result&&!result.success)throw new Error(result.message||"Gagal menyimpan");localSave();message("planMessage",result?"Anggaran dan transaksi tersimpan ke Google Sheets.":"Tersimpan di browser saja. Atur URL Apps Script di frontend/config.js untuk sinkronisasi Google Sheets.", "success");}
+  try{const result=await api("saveAll",{...data,paydayStart:$("paydayStart").value,paydayNext:$("paydayNext").value,transactions});if(result&&!result.success)throw new Error(result.message||"Gagal menyimpan");localSave();committedLockEnd=$("paydayNext").value;recommendationApplied=false;localSave();refreshTabLocks();message("planMessage",result?"Anggaran tersimpan.":"Anggaran tersimpan di browser.", "success");}
   catch(e){localSave();message("planMessage",`Sinkronisasi gagal: ${e.message}. Salinan lokal tetap disimpan di browser; periksa status backend di atas.`, "error");}
   finally{btn.disabled=false;btn.textContent=original;}
 });
@@ -241,22 +259,21 @@ function addMonthsToDate(dateString, months=1){
   const lastDay=new Date(first.getFullYear(),first.getMonth()+1,0).getDate();
   return `${first.getFullYear()}-${String(first.getMonth()+1).padStart(2,"0")}-${String(Math.min(d,lastDay)).padStart(2,"0")}`;
 }
-function syncPlanDatesToRecommendation(){
-  if($("recommendationPaydayStart")) $("recommendationPaydayStart").value=$("paydayStart").value||localDateString();
-  if($("recommendationPaydayNext")) $("recommendationPaydayNext").value=$("paydayNext").value||"";
+function initializeRecommendationDates(){
+  // Initialize once from the committed cycle; thereafter these inputs are independent drafts.
+  if($("recommendationPaydayStart") && !$("recommendationPaydayStart").value) $("recommendationPaydayStart").value=activePaydayStart||localDateString();
+  if($("recommendationPaydayNext") && !$("recommendationPaydayNext").value) $("recommendationPaydayNext").value=activePaydayNext||"";
 }
-function syncRecommendationDatesToPlan(){
+function validateRecommendationDates(){
   const start=$("recommendationPaydayStart").value;
   const end=$("recommendationPaydayNext").value;
   if(!start||!end){message("recommendationMessage","Tanggal awal dan tanggal akhir siklus wajib diisi sebelum menghitung rekomendasi.","error");return false;}
   if(start>=end){message("recommendationMessage","Tanggal akhir siklus harus lebih baru daripada tanggal awal.","error");return false;}
-  $("paydayStart").value=start; $("paydayNext").value=end; $("budgetDate").value=start.slice(0,7);
-  localSave(); renderActual();
   return true;
 }
 function makeRecommendation(){
-  if(!syncRecommendationDatesToPlan()) return;
-  const currentPeriod=period(), range=usageRange();
+  if(!validateRecommendationDates()) return;
+  const currentPeriod=period(), range=rangeFromRecommendationInputs();
   if(!range){message("recommendationMessage","Isi tanggal gajian saat ini dan tanggal gajian berikutnya terlebih dahulu agar sisa per pos dihitung sesuai siklus.","error");return;}
   const requestedMainBudget=$("recommendationMainBudget").value.trim();
   const main=requestedMainBudget===""?mainBudget():num(requestedMainBudget);
@@ -266,7 +283,7 @@ function makeRecommendation(){
   const flexibleTemplate=flexible.reduce((s,x)=>s+num(x.baseBudget),0);
   const flexibleFunds=Math.max(0,main-mandatoryTotal);
   const draft=items.map(it=>{
-    const actualCurrent=actualForUsagePeriod(it);
+    const actualCurrent=transactions.filter(t=>t.itemName===it.name && String(t.date||"")>=range.start && String(t.date||"")<range.next).reduce((sum,t)=>sum+(t.type==="income"?-num(t.amount):num(t.amount)),0);
     const remaining=round(Number(it.amount||0)-actualCurrent);
     let recommendedBase;
     if(it.mandatory) recommendedBase=num(it.baseBudget);
@@ -312,12 +329,15 @@ $("applyRecommendationBtn").addEventListener("click",()=>{
   $("paydayStart").value=recommendation.rangeNext;
   $("paydayNext").value=recommendation.nextPayday;
   items=next.items.map(x=>({...x,id:nextId++}));
-  recalc();renderItems();renderActual();localSave();
-  message("recommendationMessage",`Draft periode ${period()} diterapkan ke Rencana Anggaran, belum disimpan ke Google Sheets. Periksa/ubah kedua tanggal gajian dan Base/Additional Budget, lalu klik Simpan anggaran.`,"success");
+  recommendationApplied=true;
+  recalc();renderItems();renderActual();localSave();refreshTabLocks();
+  localSave();
+  message("recommendationMessage",`Draft periode ${period()} diterapkan ke Rencana Anggaran, belum disimpan ke Google Sheets. Periksa/ubah kedua tanggal gajian dan Base/Additional Budget, lalu klik Simpan anggaran. Data transaksi aktual tetap memakai siklus tersimpan sampai Anda menyimpan anggaran.`,"success");
   document.querySelector('[data-tab="plan"]').click();
   message("planMessage","Draft rekomendasi sudah dimuat. Periksa periode dan tanggal gajian; klik Simpan anggaran untuk menyimpan ke Google Sheets.","success");
 });
 document.querySelectorAll(".tab").forEach(btn=>btn.addEventListener("click",()=>{
+  if(btn.disabled)return;
   document.querySelectorAll(".tab").forEach(b=>b.classList.toggle("active",b===btn));
   document.querySelectorAll(".tab-panel").forEach(p=>p.hidden=p.id!==`tab-${btn.dataset.tab}`);
   if(btn.dataset.tab==="transactions")renderActual();
@@ -450,13 +470,13 @@ $("sendAdviceBtn").addEventListener("click",async()=>{
   finally{btn.disabled=false;btn.textContent="Kirim via Fonnte";}
 });
 $("txDate").value=localDateString();
-$("paydayStart").addEventListener("change",()=>{if($("paydayStart").value){$("budgetDate").value=$("paydayStart").value.slice(0,7);}localSave();renderActual();});
-$("paydayNext").addEventListener("change",()=>{localSave();renderActual();syncPlanDatesToRecommendation();});
-$("paydayStart").addEventListener("change",syncPlanDatesToRecommendation);
-$("recommendationPaydayStart").addEventListener("change",()=>{ $("paydayStart").value=$("recommendationPaydayStart").value; if($("paydayStart").value) $("budgetDate").value=$("paydayStart").value.slice(0,7); localSave(); renderActual(); recommendation=null; renderRecommendation(); });
-$("recommendationPaydayNext").addEventListener("change",()=>{ $("paydayNext").value=$("recommendationPaydayNext").value; localSave(); renderActual(); recommendation=null; renderRecommendation(); });
+$("paydayStart").addEventListener("change",()=>{if($("paydayStart").value){$("budgetDate").value=$("paydayStart").value.slice(0,7);}localSave();message("planMessage","Tanggal rencana berubah sebagai draft. Transaksi aktual tetap memakai rentang siklus tersimpan sampai klik Simpan anggaran.");});
+$("paydayNext").addEventListener("change",()=>{localSave();message("planMessage","Tanggal rencana berubah sebagai draft. Transaksi aktual tetap memakai rentang siklus tersimpan sampai klik Simpan anggaran.");});
+$("recommendationPaydayStart").addEventListener("change",()=>{recommendation=null;renderRecommendation();message("recommendationMessage","Rentang rekomendasi berubah sebagai draft saja. Klik Hitung rekomendasi untuk menghitung dengan tanggal ini.");});
+$("recommendationPaydayNext").addEventListener("change",()=>{recommendation=null;renderRecommendation();message("recommendationMessage","Rentang rekomendasi berubah sebagai draft saja. Klik Hitung rekomendasi untuk menghitung dengan tanggal ini.");});
 localLoad();
-syncPlanDatesToRecommendation();
+initializeRecommendationDates();
+refreshTabLocks();
 // Optional recommendation income intentionally stays blank by default; blank reuses the current Main Budget.
 checkBackendConnection();
 })();
