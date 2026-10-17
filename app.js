@@ -3,6 +3,7 @@
 const $ = id => document.getElementById(id);
 const API_URL = String(window.BUDGET_TRACKER_API_URL || "").trim(); // Set in config.js; never put Gemini/Fonnte keys here.
 const STORAGE_KEY = "budget-tracker-v02";
+const EMAIL_KEY = "budget-tracker-user-email-v1";
 let items = [], transactions = [], nextId = 1, recommendation = null, latestAiAdvice = "", historyRows = [];
 // Active transaction cycle is the last committed plan cycle. Editors in other tabs remain drafts until an explicit action.
 let activePaydayStart = "", activePaydayNext = "";
@@ -156,7 +157,7 @@ async function api(action,data={}){
 }
 async function checkBackendConnection(){
   const badge=$("connectionStatus");
-  if(!API_URL){badge.textContent="Mode lokal · backend belum diatur";badge.className="status status-demo";return;}
+  if(!API_URL){badge.textContent="Mode lokal · backend belum diatur";badge.className="status status-demo";return false;}
   badge.textContent="Memeriksa koneksi dan memuat data…";badge.className="status status-demo";
   try {
     const health=await api("health");
@@ -186,12 +187,54 @@ async function checkBackendConnection(){
       transactions=txResult.data.map((t,i)=>({id:String(t.id||`remote-${i}-${t.date||""}`),date:String(t.date||""),itemName:String(t.itemName||""),description:String(t.description||""),amount:Number(t.amount)||0,type:t.type==="income"?"income":"expense"}));
     } else if(txResult && txResult.success===false) throw new Error(txResult.message||"Gagal memuat transaksi dari Google Sheets");
     localSave(); renderActual();
-    badge.textContent="Backend terhubung · data Google Sheets dimuat";badge.className="status status-connected";
+    badge.textContent="Backend terhubung · data Google Sheets dimuat";badge.className="status status-connected";return true;
   } catch(err) {
     badge.textContent="Backend terhubung bermasalah saat memuat data";badge.className="status status-error";
-    console.error("Budget Tracker backend load:",err);
+    console.error("Budget Tracker backend load:",err);return false;
   }
 }
+async function reloadTransactions(options={}){
+  const btn=$("reloadTransactionsBtn");
+  const status=$("connectionStatus");
+  const showMessage=options.showMessage!==false;
+  if(!API_URL){if(showMessage)message("txMessage","Backend belum diatur. Periksa frontend/config.js.","error");return false;}
+  if(btn){btn.disabled=true;btn.textContent="Memuat…";}
+  try{
+    const range=usageRange();
+    const result=range
+      ? await api("getHistoricalTransactions",{startDate:range.start,nextDate:range.next})
+      : await api("getTransactions",{period:period()});
+    if(!result||result.success!==true||!Array.isArray(result.data)) throw new Error(result?.message||"Backend tidak mengembalikan daftar transaksi.");
+    transactions=result.data.map((t,i)=>({id:String(t.id||`remote-${i}-${t.date||""}`),date:String(t.date||"").slice(0,10),itemName:String(t.itemName||"").trim(),description:String(t.description||""),amount:Number(t.amount)||0,type:t.type==="income"?"income":"expense"}));
+    localSave();renderActual();
+    if(status){status.textContent="Backend terhubung · data Google Sheets dimuat";status.className="status status-connected";status.hidden=false;}
+    if(showMessage)message("txMessage",`Sinkronisasi selesai: ${transactions.length} transaksi dimuat dari Google Sheets${range?` (${range.start} s.d. sebelum ${range.next})`: ` untuk ${period()}`}.`,"success");
+    return true;
+  }catch(err){
+    console.error("Reload transactions:",err);
+    if(status){status.textContent="Gagal sinkronisasi";status.className="status status-error";status.hidden=false;}
+    if(showMessage)message("txMessage",`Gagal memuat transaksi: ${err.message}`,"error");
+    return false;
+  }finally{if(btn){btn.disabled=false;btn.textContent="↻ Reload transaksi";}}
+}
+function initEmailIdentity(){
+  const input=$("loginEmail"),status=$("loginStatus");
+  const saved=localStorage.getItem(EMAIL_KEY)||"";
+  if(input)input.value=saved;
+  if(status)status.textContent=saved?`Email perangkat: ${saved}`:"Email belum dipilih";
+}
+$("loginSyncBtn").addEventListener("click",async()=>{
+  const input=$("loginEmail"),email=String(input.value||"").trim().toLowerCase();
+  if(!email||!input.checkValidity()) {input.focus();$("loginStatus").textContent="Masukkan alamat email yang valid.";return;}
+  localStorage.setItem(EMAIL_KEY,email);
+  $("loginStatus").textContent=`Email perangkat: ${email} · menyinkronkan…`;
+  const ok=await checkBackendConnection();
+  const txOk=await reloadTransactions({showMessage:true});
+  $("loginStatus").textContent=ok!==false&&txOk?`Tersambung sebagai ${email}`:`Email tersimpan; periksa status backend`;
+});
+$("reloadTransactionsBtn").addEventListener("click",()=>reloadTransactions());
+window.addEventListener("online",()=>{if(API_URL)reloadTransactions({showMessage:false});});
+
 $("budgetRows").addEventListener("input",e=>{
   const el=e.target,id=Number(el.dataset.id),field=el.dataset.field,it=items.find(x=>x.id===id);if(!it||!field)return;
   if(field==="name"){it.name=el.value;renderCategoryOptions();return;}
@@ -271,37 +314,71 @@ function validateRecommendationDates(){
   if(start>=end){message("recommendationMessage","Tanggal akhir siklus harus lebih baru daripada tanggal awal.","error");return false;}
   return true;
 }
-function makeRecommendation(){
+async function makeRecommendation(){
   if(!validateRecommendationDates()) return;
   const currentPeriod=period(), range=rangeFromRecommendationInputs();
-  if(!range){message("recommendationMessage","Isi tanggal gajian saat ini dan tanggal gajian berikutnya terlebih dahulu agar sisa per pos dihitung sesuai siklus.","error");return;}
+  if(!range){message("recommendationMessage","Isi tanggal awal dan akhir siklus yang valid terlebih dahulu.","error");return;}
   const requestedMainBudget=$("recommendationMainBudget").value.trim();
   const main=requestedMainBudget===""?mainBudget():num(requestedMainBudget);
   if(main<=0){message("recommendationMessage","Main Budget periode baru harus lebih besar dari nol, atau kosongkan untuk memakai Main Budget periode berjalan.","error");return;}
-  const mandatory=items.filter(x=>x.mandatory), flexible=items.filter(x=>!x.mandatory);
-  const mandatoryTotal=mandatory.reduce((s,x)=>s+num(x.baseBudget),0);
-  const flexibleTemplate=flexible.reduce((s,x)=>s+num(x.baseBudget),0);
-  const flexibleFunds=Math.max(0,main-mandatoryTotal);
-  const draft=items.map(it=>{
-    const actualCurrent=transactions.filter(t=>t.itemName===it.name && String(t.date||"")>=range.start && String(t.date||"")<range.next).reduce((sum,t)=>sum+(t.type==="income"?-num(t.amount):num(t.amount)),0);
-    const remaining=round(Number(it.amount||0)-actualCurrent);
-    let recommendedBase;
-    if(it.mandatory) recommendedBase=num(it.baseBudget);
-    else recommendedBase=flexibleTemplate?flexibleFunds*num(it.baseBudget)/flexibleTemplate:0;
-    return {name:it.name,mandatory:it.mandatory,template:round(it.baseBudget),actualPrevious:round(actualCurrent),additional:remaining,recommended:round(recommendedBase),final:round(recommendedBase),mode:"amount"};
-  });
-  const deficit=Math.max(0,mandatoryTotal-main);
-  const additionalTotal=draft.reduce((s,x)=>s+x.additional,0);
-  const nextPeriod=range.next.slice(0,7);
-  const nextPayday=addMonthsToDate(range.next,1);
-  recommendation={period:currentPeriod,nextPeriod,mainBudget:main,rangeStart:range.start,rangeNext:range.next,nextPayday,additionalTotal,draft,deficit};
-  renderRecommendation();
+
+  const btn=$("generateBtn"), original=btn.textContent;
+  btn.disabled=true; btn.textContent="Memuat transaksi…";
+  message("recommendationMessage",`Mengambil transaksi Google Sheets untuk ${range.start} sampai sebelum ${range.next}…`);
+  try {
+    // Do not rely on the browser's active-cycle cache: recommendation dates are independent drafts.
+    let cycleTransactions;
+    if(API_URL){
+      const result=await api("getHistoricalTransactions",{startDate:range.start,nextDate:range.next});
+      if(!result || result.success!==true || !Array.isArray(result.data))
+        throw new Error(result?.message||"Backend tidak mengembalikan daftar transaksi untuk rentang rekomendasi.");
+      cycleTransactions=result.data.map((t,i)=>({
+        id:String(t.id||`rec-${i}-${t.date||""}`), date:String(t.date||"").slice(0,10),
+        itemName:String(t.itemName||"").trim(), description:String(t.description||""),
+        amount:Number(t.amount)||0, type:String(t.type||"").toLowerCase()==="income"?"income":"expense"
+      }));
+    } else {
+      cycleTransactions=transactions.filter(t=>String(t.date||"").slice(0,10)>=range.start&&String(t.date||"").slice(0,10)<range.next);
+    }
+
+    const normalizeName=s=>String(s||"").trim().replace(/\s+/g," ").toLocaleLowerCase("id-ID");
+    const mandatory=items.filter(x=>x.mandatory), flexible=items.filter(x=>!x.mandatory);
+    const mandatoryTotal=mandatory.reduce((s,x)=>s+num(x.baseBudget),0);
+    const flexibleTemplate=flexible.reduce((s,x)=>s+num(x.baseBudget),0);
+    const flexibleFunds=Math.max(0,main-mandatoryTotal);
+    const draft=items.map(it=>{
+      const key=normalizeName(it.name);
+      const matching=cycleTransactions.filter(t=>normalizeName(t.itemName)===key);
+      const expense=matching.filter(t=>t.type!=="income").reduce((sum,t)=>sum+num(t.amount),0);
+      const income=matching.filter(t=>t.type==="income").reduce((sum,t)=>sum+num(t.amount),0);
+      const actualCurrent=round(expense-income);
+      const remaining=round(Number(it.amount||0)-actualCurrent);
+      let recommendedBase;
+      if(it.mandatory) recommendedBase=num(it.baseBudget);
+      else recommendedBase=flexibleTemplate?flexibleFunds*num(it.baseBudget)/flexibleTemplate:0;
+      return {name:it.name,mandatory:it.mandatory,template:round(it.baseBudget),actualPrevious:actualCurrent,actualExpense:round(expense),actualIncome:round(income),matchedTransactions:matching.length,additional:remaining,recommended:round(recommendedBase),final:round(recommendedBase),mode:"amount"};
+    });
+    const deficit=Math.max(0,mandatoryTotal-main);
+    const additionalTotal=draft.reduce((s,x)=>s+x.additional,0);
+    const nextPeriod=range.next.slice(0,7);
+    const nextPayday=addMonthsToDate(range.next,1);
+    recommendation={period:currentPeriod,nextPeriod,mainBudget:main,rangeStart:range.start,rangeNext:range.next,nextPayday,additionalTotal,draft,deficit,transactionCount:cycleTransactions.length,source:API_URL?"Google Sheets":"browser lokal"};
+    renderRecommendation();
+    const matched=draft.reduce((n,x)=>n+x.matchedTransactions,0);
+    const noMatch=cycleTransactions.length>0&&matched===0;
+    const summary=`Sumber: ${recommendation.source}. ${cycleTransactions.length} transaksi ditemukan pada rentang ${range.start} s.d. sebelum ${range.next}; ${matched} kecocokan transaksi-pos dihitung.`;
+    message("recommendationMessage",noMatch?`${summary} Tidak ada nama pos yang cocok dengan anggaran. Periksa nama pos di TRANSACTIONS dan anggaran.`:summary, noMatch?"error":"success");
+  } catch(err) {
+    recommendation=null; renderRecommendation();
+    message("recommendationMessage",`Gagal mengambil transaksi untuk rekomendasi: ${err.message||err}. Tidak ada rekomendasi baru yang dibuat.`,"error");
+    console.error("Recommendation transaction load:",err);
+  } finally { btn.disabled=false; btn.textContent=original; }
 }
 function renderRecommendation(){
   const body=$("recommendationRows");body.innerHTML="";
   if(!recommendation){$("recommendationIntro").textContent="Hitung rekomendasi untuk menggunakan sisa setiap pos pada siklus berjalan sebagai Additional Budget periode berikutnya.";return;}
   const r=recommendation;
-  $("recommendationIntro").textContent=`Siklus berjalan ${r.rangeStart} sampai ${r.rangeNext} (tanggal akhir tidak termasuk). Rencana baru: ${r.nextPeriod}, mulai gajian ${r.rangeNext} sampai sebelum ${r.nextPayday}. Base Budget rekomendasi dialokasikan dari Main Budget ${fmt(r.mainBudget)}; Additional Budget per pos berasal dari sisa aktual siklus berjalan, termasuk defisit negatif. Total additional bersih: ${fmt(r.additionalTotal)}. ${r.deficit>0?`Peringatan: alokasi pos wajib melebihi Main Budget sebesar ${fmt(r.deficit)}.`:""}`;
+  $("recommendationIntro").textContent=`Sumber aktual: ${r.source||"browser lokal"} · ${r.transactionCount??0} transaksi pada rentang. Siklus berjalan ${r.rangeStart} sampai ${r.rangeNext} (tanggal akhir tidak termasuk). Rencana baru: ${r.nextPeriod}, mulai gajian ${r.rangeNext} sampai sebelum ${r.nextPayday}. Base Budget rekomendasi dialokasikan dari Main Budget ${fmt(r.mainBudget)}; Additional Budget per pos berasal dari sisa aktual siklus berjalan, termasuk defisit negatif. Total additional bersih: ${fmt(r.additionalTotal)}. ${r.deficit>0?`Peringatan: alokasi pos wajib melebihi Main Budget sebesar ${fmt(r.deficit)}.`:""}`;
   r.draft.forEach((x,i)=>{
     const nextTotal=round(x.final+x.additional);
     const tr=document.createElement("tr");
@@ -475,6 +552,7 @@ $("paydayNext").addEventListener("change",()=>{localSave();message("planMessage"
 $("recommendationPaydayStart").addEventListener("change",()=>{recommendation=null;renderRecommendation();message("recommendationMessage","Rentang rekomendasi berubah sebagai draft saja. Klik Hitung rekomendasi untuk menghitung dengan tanggal ini.");});
 $("recommendationPaydayNext").addEventListener("change",()=>{recommendation=null;renderRecommendation();message("recommendationMessage","Rentang rekomendasi berubah sebagai draft saja. Klik Hitung rekomendasi untuk menghitung dengan tanggal ini.");});
 localLoad();
+initEmailIdentity();
 initializeRecommendationDates();
 refreshTabLocks();
 // Optional recommendation income intentionally stays blank by default; blank reuses the current Main Budget.

@@ -10,8 +10,12 @@
 <body>
 <div class="app-shell">
   <header class="topbar">
-    <div><div class="eyebrow">PERSONAL FINANCE</div><h1>Budget Tracker</h1></div>
-
+    <div><div class="eyebrow">PERSONAL FINANCE</div><h1>Budget Tracker</h1><p class="muted small">Anggaran pribadi · sinkronisasi Google Sheets</p></div>
+    <div class="login-strip" aria-label="Identitas pengguna">
+      <label class="field login-email-field"><span>Email pengguna</span><input id="loginEmail" type="email" autocomplete="email" placeholder="nama@email.com" inputmode="email"></label>
+      <button id="loginSyncBtn" class="button button-secondary" type="button">Masuk & sinkronkan</button>
+      <span id="loginStatus" class="muted small" role="status">Belum memilih email</span>
+    </div>
   </header>
 
   <nav class="tabs" aria-label="Navigasi aplikasi">
@@ -56,7 +60,7 @@
 
     <section id="tab-transactions" class="tab-panel" hidden>
       <section class="panel">
-        <div class="section-heading"><div><div class="eyebrow">ACTUAL SPENDING</div><h2>Transaksi masuk & keluar</h2></div></div>
+        <div class="section-heading transaction-heading"><div><div class="eyebrow">ACTUAL SPENDING</div><h2>Transaksi masuk & keluar</h2><p class="muted small">Muat ulang untuk mengambil transaksi terbaru dari Google Sheets.</p></div><button id="reloadTransactionsBtn" class="button button-secondary" type="button">↻ Reload transaksi</button></div>
         <div class="form-grid transaction-form">
           <label class="field"><span>Tanggal transaksi</span><input id="txDate" type="date"></label>
           <label class="field"><span>Jenis transaksi</span><select id="txType"><option value="expense">Pengeluaran</option><option value="income">Pemasukan / reimbursement</option></select></label>

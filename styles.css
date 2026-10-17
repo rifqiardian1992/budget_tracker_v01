@@ -39,3 +39,15 @@ footer{text-align:center;color:#98a1b2;font-size:11px;padding:24px 0 0}[hidden]{
 
 /* Final UI: locked planning tabs remain unavailable until H-1. */
 .tabs .tab:disabled,.tabs .tab.tab-locked{opacity:.42;cursor:not-allowed;filter:grayscale(1);}
+
+
+/* v0.5.7 responsive layout and simple email identity / sync controls */
+.app-shell{max-width:1540px;width:100%;padding:28px clamp(14px,2.2vw,34px)}
+.topbar{align-items:flex-start;flex-wrap:wrap}
+.login-strip{display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap;padding:12px 14px;background:var(--surface);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow)}
+.login-email-field{min-width:230px;gap:5px}
+.login-email-field input{min-height:40px}
+#loginStatus{max-width:240px;overflow-wrap:anywhere;padding-bottom:10px}
+.transaction-heading{align-items:center}
+@media(min-width:1100px){.app-shell{padding-top:28px}.tab-panel#tab-plan{grid-template-columns:minmax(0,1fr)}.tab-panel#tab-transactions{grid-template-columns:minmax(0,1fr)}.panel{padding:clamp(20px,1.7vw,30px)}table{font-size:13px}.table-wrap table{min-width:0}.tab-panel#tab-plan .table-wrap table{min-width:1040px}}
+@media(max-width:760px){.app-shell{padding:14px 10px 22px}.topbar{display:grid;gap:14px;margin-bottom:16px}.login-strip{display:grid;grid-template-columns:minmax(0,1fr);width:100%;align-items:stretch}.login-email-field{min-width:0}.login-strip .button{width:100%}#loginStatus{max-width:none;padding:0}.tabs{margin-bottom:14px}.tab{padding:10px 12px}.panel{padding:15px}.transaction-heading{align-items:stretch;flex-direction:column}.transaction-heading .button{width:100%}.table-wrap table{min-width:720px}.history-table{min-width:720px}}
